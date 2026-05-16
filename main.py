@@ -72,6 +72,30 @@ def run_pipeline(day: int, current_date: datetime, stress_event: dict):
 
 
 if __name__ == "__main__":
+    # ── [데이터 오염 방지] 시뮬레이션 가동 직전 기존 로그 파일 포맷(Initialize) ──
+    def initialize_simulation_files():
+        """이전 시뮬레이션의 유령 데이터를 깨끗이 제거하여 대시보드 정합성 확보"""
+        import json as _json
+
+        # 1. 과거 누적 발주 이력 파일 초기화 (빈 배열로 덮어쓰기)
+        history_file = os.getenv("HISTORY_OUTPUT_PATH", "outputs/order_history.json")
+        if os.path.exists(history_file):
+            with open(history_file, "w", encoding="utf-8") as f:
+                _json.dump([], f)
+            logger.info(f"🧹 [초기화] 발주 이력 파일 포맷 완료: {history_file}")
+
+        # 2. 과거 비상 보고서(emergency_report_day*.json) 전부 삭제
+        output_dir = "outputs"
+        if os.path.exists(output_dir):
+            removed = 0
+            for filename in os.listdir(output_dir):
+                if filename.startswith("emergency_report_day") and filename.endswith(".json"):
+                    os.remove(os.path.join(output_dir, filename))
+                    removed += 1
+            if removed > 0:
+                logger.info(f"🧹 [초기화] 이전 비상 리포트 {removed}건 삭제 완료")
+
+    initialize_simulation_files()
     logger.info("🚀 SCM AI 다중 에이전트 다이나믹 시뮬레이션 코어 가동")
     sim = TimeSimulator()
     sim.run(run_pipeline)
