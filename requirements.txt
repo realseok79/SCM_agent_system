@@ -6,5 +6,5 @@ python-dotenv
 pytest
 pytest-cov
 pydantic
-flask
-numpy
+yfinance
+fredapi

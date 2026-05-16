@@ -13,7 +13,7 @@ from datetime import datetime
 from collections import deque
 from dotenv import load_dotenv
 
-from dto.schemas import InventorySignalDTO
+from dto.schemas import InventorySignalDTO, AlertLevel
 from utils.logger import get_logger
 
 load_dotenv()
@@ -109,7 +109,7 @@ class ActionAgent:
             "trigger": {
                 "reorder_point": signal.reorder_point,
                 "safety_stock": signal.safety_stock,
-                "alert_level": signal.alert_level,
+                "alert_level": signal.alert_level.value if isinstance(signal.alert_level, AlertLevel) else signal.alert_level,
             },
             "note": guardrail.get("required_action", "자동 발주 집행")
         }
@@ -120,34 +120,40 @@ class ActionAgent:
         return order
 
     def _issue_emergency_report(self, signal: InventorySignalDTO, order: dict) -> dict:
+        # 안전하게 문자열 추출
+        current_level_str = signal.alert_level.value if isinstance(signal.alert_level, AlertLevel) else str(signal.alert_level)
+        
         report = {
             "report_id": f"EMG-DAY{signal.day:03d}-{datetime.now().strftime('%H%M%S')}",
             "timestamp": signal.timestamp,
             "day": signal.day,
-            "alert_level": signal.alert_level,
+            "alert_level": current_level_str,
             "situation_summary": (
-                f"{signal.day}일차 {signal.alert_level} 경보 발령 | "
+                f"{signal.day}일차 {current_level_str} 경보 발령 | "
                 f"ROP: {signal.reorder_point:.0f} | SS: {signal.safety_stock:.0f}"
             ),
             "defense_scenarios": [
                 {
                     "scenario": "A - 즉시 긴급 발주",
                     "action": f"최적 발주량 {signal.optimal_order_qty:.0f}개 즉시 집행",
-                    "recommended": signal.alert_level == "CRITICAL"
+                    "recommended": current_level_str == "CRITICAL" # 문자열 기반 비교로 타입 일관성 확보
                 },
                 {
                     "scenario": "B - 분할 발주",
                     "action": f"발주량 2회 분할",
-                    "recommended": signal.alert_level == "WARNING"
+                    "recommended": current_level_str == "WARNING"
                 }
             ],
             "guardrail_status": order["status"]
         }
 
-        with open(REPORT_OUTPUT_PATH, "w", encoding="utf-8") as f:
+        # ── [보완] 리포트 파일 덮어쓰기 전면 방지: 일차별 개별 저장 체계 구축 ──
+        daily_report_path = f"outputs/emergency_report_day{signal.day:03d}.json"
+        with open(daily_report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
 
-        logger.warning(f"🚨 시스템 비상 모드 가동 [{signal.alert_level}] 리포트 발행")
+        # 시스템 모니터링을 위해 고유 저장 경로 로그 출력
+        logger.warning(f"🚨 시스템 비상 모드 가동 [{current_level_str}] 리포트 발행 완료 ➔ {daily_report_path}")
         return report
 
     def _save_history(self, order: dict):
@@ -162,19 +168,20 @@ class ActionAgent:
         """
         제어 변수(승인된 발주량)를 시뮬레이터로 반환하여 상태 피드백 루프를 완성합니다.
         """
-        if signal.alert_level == "NORMAL":
+        # 스트링 비교가 아닌 Enum 비교로 안전성 극대화
+        if signal.alert_level == AlertLevel.NORMAL:
             return {
-                "action": "NO_ORDER", 
-                "day": signal.day, 
-                "approved_qty": 0.0,  # 시뮬레이터 반영을 위한 명시적 제어 변수 반환
-                "reason": "재고 ROP 초과 유지 중"
+                "action": "NO_ORDER",
+                "day": signal.day,
+                "approved_qty": 0.0,
+                "reason": f"현재 재고가 ROP({signal.reorder_point:.0f}) 위에서 안정적으로 유지 중"
             }
 
         guardrail = self._validate_guardrail(signal.optimal_order_qty)
         order = self._create_order(signal, guardrail)
 
         report = None
-        if signal.alert_level in ("WARNING", "CRITICAL"):
+        if signal.alert_level in (AlertLevel.WARNING, AlertLevel.CRITICAL):
             report = self._issue_emergency_report(signal, order)
 
         self._save_history(order)
