@@ -36,7 +36,9 @@ class DataAgent:
 
     def __init__(self):
         self._db: list[dict] = self._load_db()
-        self._demand_history: list[float] = []  # 통계적 기준선(Baseline) 유지를 위한 순수 수요 이력
+        # 통계적 기준선 및 Analysis Agent 전달용 시계열 Buffer 초기화
+        self._demand_history: list[float] = []
+        self._lt_history: list[float] = []
         logger.info(f"DataAgent 초기화 완료 | DB 레코드: {len(self._db)}일치")
 
     def _load_db(self) -> list[dict]:
@@ -101,7 +103,7 @@ class DataAgent:
             return clipped
         return value
 
-    def collect(self, day: int, current_virtual_date: datetime, stress_event: dict = None) -> DataDTO:
+    def collect(self, day: int, current_date, stress_event, current_stock: float) -> DataDTO:
         """
         데이터 수집 및 정제 파이프라인 메인 (Analysis Agent로 표준 DTO 전달)
         """
@@ -111,18 +113,19 @@ class DataAgent:
 
         # 1. 원시 데이터 추출 (Sales가 아닌 Demand 추출로 검열 방지)
         raw_demand = raw.get("daily_demand", raw.get("daily_sales")) 
-        raw_stock = raw.get("stock_level")
 
         # 2. 결측치 및 통계적 노이즈 보정
         clean_demand = self._clip_outlier(self._fix_missing(raw_demand, "daily_demand"), "daily_demand")
-        clean_stock = self._fix_missing(raw_stock, "stock_level")
 
-        # 3. 기준선(Baseline) 히스토리 갱신 (스트레스 적용 '전' 데이터를 넣어 통계 오염 방지)
-        self._demand_history.append(clean_demand)
-
-        # 4. 외부 신호 통신
+        # 3. 외부 신호 수집
         signals = self._fetch_external_signals(day)
         base_lead_time = signals["lead_time_days"]
+
+        # 4. 최종 확정된 전처리 데이터를 히스토리에 누적 (과거 창 생성)
+        # 스트레스 이벤트 배율이 적용되기 전의 순수 정제 데이터(Baseline)만 히스토리에 쌓음
+        self._demand_history.append(float(clean_demand))
+        self._lt_history.append(float(base_lead_time))
+
 
         # 5. 스트레스 테스트 시나리오 가중치 연산
         final_demand = clean_demand
@@ -133,15 +136,16 @@ class DataAgent:
             final_lead_time *= stress_event.get("lead_time_multiplier", 1.0)
             logger.warning(f"⚠️ [{day}일차] 스트레스 주입 완료: 수요 {final_demand:.0f} / 조달 {final_lead_time:.1f}일")
 
-        # 6. 표준 DTO 반환
-        dto = DataDTO(
-            timestamp=current_virtual_date.isoformat(),
+        # 6. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달
+        return DataDTO(
+            timestamp=datetime.now().isoformat(),
             day=day,
-            daily_demand=round(final_demand, 1),
-            current_stock=round(clean_stock, 0),
-            lead_time_days=round(final_lead_time, 1),
-            weather_index=round(signals["weather_index"], 3),
-            macro_trend=round(signals["macro_trend"], 3),
+            daily_demand=float(final_demand),
+            current_stock=float(current_stock),  # 시뮬레이터에서 계산된 실시간 동적 재고 반영
+            lead_time_days=float(final_lead_time),
+            weather_index=float(signals["weather_index"]),
+            macro_trend=float(signals["macro_trend"]),
+            # 확장 필드 바인딩 (메모리 참조 오염 방지를 위해 list()로 복사본 전달)
+            history_demand=list(self._demand_history),
+            history_lead_time=list(self._lt_history)
         )
-
-        return dto
