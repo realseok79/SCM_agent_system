@@ -5,7 +5,7 @@ class DataDTO:
     """Data Agent → Analysis Agent"""
     timestamp: str
     day: int
-    daily_sales: float
+    daily_demand: float
     current_stock: float
     lead_time_days: float
     weather_index: float
