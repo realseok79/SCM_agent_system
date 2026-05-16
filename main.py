@@ -98,4 +98,6 @@ if __name__ == "__main__":
     initialize_simulation_files()
     logger.info("🚀 SCM AI 다중 에이전트 다이나믹 시뮬레이션 코어 가동")
     sim = TimeSimulator()
+    
+    # 파이프라인 실행
     sim.run(run_pipeline)
