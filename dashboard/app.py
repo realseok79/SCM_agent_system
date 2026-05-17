@@ -5,24 +5,50 @@ from streamlit_autorefresh import st_autorefresh
 from matplotlib import rc
 import streamlit as st
 from utils.macro_connector import GlobalMacroEngine
-st.set_page_config(page_title="SCM Agent Dashboard", page_icon="📦", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="SCM Agent Dashboard", page_icon="📦", layout="wide", initial_sidebar_state="expanded")
 plt.rcParams["axes.unicode_minus"] = False
 for f in ["AppleGothic","NanumGothic","Malgun Gothic"]:
     try: rc("font",family=f); break
     except: continue
 
-SCM_DATA_PATH=os.getenv("SCM_DATA_PATH","outputs/scm_dummy_data.json")
-ORDER_HISTORY_PATH=os.getenv("HISTORY_OUTPUT_PATH","outputs/order_history.json")
-EMERGENCY_PATH=os.getenv("REPORT_OUTPUT_PATH","outputs/emergency_report.json")
+from agents.config import PATHS
+SCM_DATA_PATH = PATHS["SCM_DATA"]
+ORDER_HISTORY_PATH = PATHS["ORDER_HISTORY"]
+EMERGENCY_PATH = PATHS["REPORT"]
 SS={30:"수요5x",60:"조달3주↑",80:"복합위기"}
 
-st.markdown("""<style>
+st.markdown("""
+<style>
+/* ── Base ── */
 .stApp{background:#202124;color:#e8eaed}
-[data-testid="collapsedControl"]{display:none}
-.block-container{padding:0.5rem 1rem 0 1rem !important;max-width:100% !important}
-div[data-testid="stVerticalBlock"]>div{gap:0.3rem !important}
-.hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:8px 16px 6px;margin:-0.5rem -1rem 0.4rem}
-.hdr-t{font-size:15px;font-weight:500;color:#e8eaed}.hdr-s{font-size:11px;color:#9aa0a6;margin-top:1px}
+/* Force main content container to stretch full width dynamically, removing empty side gutters */
+.block-container, 
+[data-testid="stMainBlockContainer"], 
+[data-testid="stAppViewBlockContainer"],
+.stApp .block-container,
+.stApp [data-testid="stMainBlockContainer"],
+.stApp [data-testid="stAppViewBlockContainer"] {
+    padding: 0 1.5rem 0 1.5rem !important;
+    max-width: 98% !important;
+    width: 98% !important;
+}
+div[data-testid="stMain"] {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* ── Native Sidebar Styling ── */
+section[data-testid="stSidebar"] {
+    background-color: #202124 !important;
+    border-right: 1px solid #3c4043 !important;
+}
+
+/* ── Header ── */
+.hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:16px 16px 10px 16px;margin:0 -1.5rem 0.6rem !important;display:flex;align-items:center;gap:14px}
+.hdr-t{font-size:15px;font-weight:500;color:#e8eaed}
+.hdr-s{font-size:11px;color:#9aa0a6;margin-top:1px}
+
+/* ── Dashboard styles ── */
 .sec{font-size:10px;font-weight:500;color:#9aa0a6;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #3c4043;padding-bottom:4px;margin:0.5rem 0 0.3rem}
 .kg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:0.3rem}
 .kc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 12px}
@@ -54,7 +80,8 @@ div[data-testid="stVerticalBlock"]>div{gap:0.3rem !important}
 .fb{font-size:9px;color:#5f6368;text-align:right;padding-top:4px;border-top:1px solid #3c4043;margin-top:0.3rem}
 div[data-testid="metric-container"]{display:none}
 div[data-testid="stButton"] button{display:none !important}
-</style>""", unsafe_allow_html=True)
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=1)
 def load_scm():
@@ -145,13 +172,16 @@ def c_rop(df):
     sax(ax);mst(ax,df);ax.set_xlabel("Day",fontsize=7);ax.set_ylabel("units",fontsize=7)
     ax.legend(fontsize=6,framealpha=0,loc="upper right",labelcolor=TX);f.tight_layout(pad=0.5);return f
 
-def c_ord(orders):
+def c_ord(orders, df):
     if not orders: return None
     do=pd.DataFrame(orders);f,ax=mk(1.8)
     ap=do[do["status"]=="APPROVED"];bl=do[do["status"]=="BLOCKED"]
     if not ap.empty: ax.bar(ap["day"],ap["order_qty"],color=CL["o"],alpha=.8,width=.8,label="승인")
     if not bl.empty: ax.bar(bl["day"],bl["order_qty"],color=CL["x"],alpha=.6,width=.8,label="차단")
     sax(ax);ax.set_xlabel("Day",fontsize=7);ax.set_ylabel("units",fontsize=7)
+    max_day = int(df["day_index"].max() + 1) if df is not None and "day_index" in df.columns else 100
+    ax.set_xlim(1, max_day)
+    mst(ax, df)
     ax.legend(fontsize=6,framealpha=0,loc="upper right",labelcolor=TX);f.tight_layout(pad=0.5);return f
 
 def render_main_dashboard():
@@ -161,7 +191,7 @@ def render_main_dashboard():
     emg=load_emg(cd)
 
     # ROW 0: Header
-    st.markdown(f'<div class="hdr"><div class="hdr-t">📦 SCM 자율 에이전트 100일 압축 시뮬레이션 대시보드</div><div class="hdr-s">Team Sigma | Data→Analysis→Action 관제탑 &nbsp;·&nbsp; Day {cd}/100 &nbsp;·&nbsp; {datetime.now().strftime("%H:%M:%S")} 실시간</div></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="hdr"><div><div class="hdr-t">SCM 자율 에이전트 100일 압축 시뮬레이션 대시보드</div><div class="hdr-s">Team Sigma | Data→Analysis→Action 관제탑 &nbsp;·&nbsp; Day {cd}/100 &nbsp;·&nbsp; {datetime.now().strftime("%H:%M:%S")} 실시간</div></div></div>',unsafe_allow_html=True)
 
     if df is None:
         st.error("❌ 데이터 없음 — `python main.py` 실행 필요");st.stop()
@@ -181,20 +211,20 @@ def render_main_dashboard():
     r2a,r2b=st.columns(2)
     with r2a:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>재고 변동 · ROP · SS</div>',unsafe_allow_html=True)
-        st.pyplot(c_stock(df,orders));st.markdown('</div>',unsafe_allow_html=True)
+        st.pyplot(c_stock(df,orders), use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
     with r2b:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>일일 수요량 추이</div>',unsafe_allow_html=True)
-        st.pyplot(c_sales(df));st.markdown('</div>',unsafe_allow_html=True)
+        st.pyplot(c_sales(df), use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
 
     # ROW 3: Left=ROP+발주 차트 세로 스택 / Right=이력 테이블+비상 보고서
     r3L,r3R=st.columns([1.2,1])
     with r3L:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>동적 발주점 (ROP) 변화 추이</div>',unsafe_allow_html=True)
-        st.pyplot(c_rop(df));st.markdown('</div>',unsafe_allow_html=True)
-        fo=c_ord(orders)
+        st.pyplot(c_rop(df), use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
+        fo=c_ord(orders, df)
         if fo:
             st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#fdd663"></span>발주 타임라인 (승인 / 차단)</div>',unsafe_allow_html=True)
-            st.pyplot(fo);st.markdown('</div>',unsafe_allow_html=True)
+            st.pyplot(fo, use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
     with r3R:
         st.markdown('<div class="sec">📋 전체 발주 제어 상세 이력부</div>',unsafe_allow_html=True)
         if orders:
@@ -235,90 +265,24 @@ def render_main_dashboard():
 import requests
 import yfinance as yf
 import ssl
-@st.cache_data
-def load_wmo_master():
-    csv_path = "data/wmo_station_master.csv"
-    os.makedirs("data", exist_ok=True)
-    if not os.path.exists(csv_path) or os.path.getsize(csv_path) < 1000:
-        world_data = {"country": [], "station_name": [], "station_id": [], "latitude": [], "longitude": []}
-        all_regions = {
-            "South Korea": [(152, "Ulsan", 35.5389, 129.3114), (159, "Busan", 35.1017, 129.0300), (108, "Seoul", 37.5665, 126.9780)],
-            "Japan": [(47662, "Tokyo", 35.6895, 139.6917), (47740, "Osaka", 34.6937, 135.5023), (47807, "Fukuoka", 33.5904, 130.4017)],
-            "China": [(58362, "Shanghai", 31.4000, 121.4667), (54511, "Beijing", 39.9042, 116.4074)],
-            "Singapore": [(48698, "Singapore Changi", 1.3521, 103.9940)],
-            "Australia": [(94768, "Sydney", -33.8688, 151.2093), (94608, "Adelaide", -34.9285, 138.6007)],
-            "Taiwan": [(58968, "Taipei", 25.0330, 121.5654)],
-            "Germany": [(10382, "Berlin", 52.5200, 13.4050), (10637, "Frankfurt", 50.1109, 8.6821)],
-            "Spain": [(8221, "Madrid", 40.4168, -3.7048), (8181, "Barcelona", 41.3851, 2.1734)],
-            "United States": [(72295, "Los Angeles", 33.9416, -118.4085), (74486, "New York JFK", 40.6397, -73.7789)]
-        }
-        for country_name, stations in all_regions.items():
-            for stn_id, name, lat, lon in stations:
-                world_data["country"].append(country_name)
-                world_data["station_name"].append(name)
-                world_data["station_id"].append(stn_id)
-                world_data["latitude"].append(lat)
-                world_data["longitude"].append(lon)
-        pd.DataFrame(world_data).to_csv(csv_path, index=False)
-    return pd.read_csv(csv_path)
-
-def get_live_weather_by_station(station_id, lat=None, lon=None):
-    utc_now = datetime.now(datetime.timezone.utc) if hasattr(datetime, 'timezone') else datetime.utcnow()
-    target_time = (utc_now - pd.Timedelta(hours=2)).strftime("%Y%m%d%H00")
-    kma_key = st.secrets.get("KMA_API_KEY", os.environ.get("KMA_API_KEY", ""))
-    url = "https://apihub.kma.go.kr/api/typ01/url/gts_syn1.php"
-    
-    kma_text = ""
-    if kma_key:
-        params = {"tm": target_time, "dtm": "3", "stn": int(station_id), "help": "0", "authKey": kma_key}
-        try:
-            response = requests.get(url, params=params, timeout=7)
-            if response.status_code == 200:
-                if "AUTH_ERROR" in response.text or "ERROR" in response.text:
-                    kma_text = f"⚠️ 기상청 API 에러: {response.text.strip()}"
-                else:
-                    # 실제 데이터 라인이 있는지 검사 (숫자로 시작하는 줄)
-                    has_data = any(line.strip() and line.strip()[0].isdigit() for line in response.text.split('\n'))
-                    if has_data:
-                        return response.text
-        except Exception as e:
-            pass
-
-    # KMA 데이터가 없거나 에러가 났을 때 OpenWeatherMap으로 Fallback
-    if lat is not None and lon is not None:
-        ow_key = st.secrets.get("OPENWEATHER_API_KEY", os.environ.get("OPENWEATHER_API_KEY", ""))
-        if ow_key:
-            ow_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={ow_key}&units=metric"
-            try:
-                res = requests.get(ow_url, timeout=7)
-                if res.status_code == 200:
-                    data = res.json()
-                    desc = data.get("weather", [{}])[0].get("description", "Unknown")
-                    temp = data.get("main", {}).get("temp", "N/A")
-                    humidity = data.get("main", {}).get("humidity", "N/A")
-                    wind = data.get("wind", {}).get("speed", "N/A")
-                    return f"[OpenWeatherMap 대체 데이터 (KMA 미수신/지연)]\n상태: {desc}\n온도: {temp}°C\n습도: {humidity}%\n풍속: {wind}m/s"
-            except: pass
-            
-    if kma_text: return kma_text
-    return "⚠️ 기상 데이터 지연 및 대체 데이터 수신 실패"
+from utils.weather_connector import load_wmo_master, get_live_weather_by_station
 
 def main():
     st.sidebar.title("SCM 관제 시스템 메뉴")
-    menu = st.sidebar.radio("이동", ["메인 대시보드", "글로벌 기상 임베딩"])
+    menu = st.sidebar.radio("이동", ["메인 대시보드", "글로벌 공급망 리스크 관제탑"])
 
     if menu == "메인 대시보드":
         render_main_dashboard()
-    elif menu == "글로벌 기상 임베딩":
-        st.title("🛰️ SCM 글로벌 관제 제어 센터")
+    elif menu == "글로벌 공급망 리스크 관제탑":
+        st.markdown(f'<div class="hdr"><div><div class="hdr-t">글로벌 공급망 리스크 관제탑</div><div class="hdr-s">Global Supply Chain Risk Control Tower &nbsp;·&nbsp; 실시간 국가별 거점 리스크 및 기상 관제</div></div></div>',unsafe_allow_html=True)
         
         wmo_master_df = load_wmo_master()
-        st.sidebar.header("🔍 글로벌 SCM 거점 초고속 검색")
         available_countries = [c for c in sorted(wmo_master_df['country'].dropna().unique()) if c != "Malaysia"]
         
-        selected_country = st.sidebar.selectbox("🏳️🌈 1. 대상 국가 선택", options=available_countries, index=available_countries.index("South Korea") if "South Korea" in available_countries else 0)
+        col_sel1, col_sel2 = st.columns(2)
+        selected_country = col_sel1.selectbox("대상 국가", options=available_countries, index=available_countries.index("South Korea") if "South Korea" in available_countries else 0)
         filtered_stations = wmo_master_df[wmo_master_df['country'] == selected_country]
-        selected_station_name = st.sidebar.selectbox(f"🏙️ 2. {selected_country} 내 허브 거점 선택", options=filtered_stations['station_name'])
+        selected_station_name = col_sel2.selectbox(f"{selected_country} 내 허브 거점", options=filtered_stations['station_name'])
         
         matched_station = filtered_stations[filtered_stations['station_name'] == selected_station_name].iloc[0]
         

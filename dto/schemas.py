@@ -36,6 +36,10 @@ class DataDTO:
     gdelt_article_count: int = 0
     gdelt_top_headline: str = ""
 
+    # ── [확장] Google Trends 수요 위험 지수 (data_config.py 키워드 매트릭스 연동) ──
+    trend_composite_score: float = 0.0
+    trend_matched_count: int = 0
+
 
 @dataclass
 class InventorySignalDTO:

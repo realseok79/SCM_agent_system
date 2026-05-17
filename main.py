@@ -77,8 +77,8 @@ if __name__ == "__main__":
         """이전 시뮬레이션의 유령 데이터를 깨끗이 제거하여 대시보드 정합성 확보"""
         import json as _json
 
-        # 1. 과거 누적 발주 이력 파일 초기화 (빈 배열로 덮어쓰기)
-        history_file = os.getenv("HISTORY_OUTPUT_PATH", "outputs/order_history.json")
+        from agents.config import PATHS
+        history_file = PATHS["ORDER_HISTORY"]
         if os.path.exists(history_file):
             with open(history_file, "w", encoding="utf-8") as f:
                 _json.dump([], f)

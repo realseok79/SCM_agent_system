@@ -22,9 +22,9 @@ class TimeSimulator:
     """
 
     def __init__(self, total_days: int = None, real_seconds: float = None):
-        # 비기능적 요구사항: 100일 분량을 5분(300초) 이내로 처리 완료 조건 반영
-        self.total_days = total_days or int(os.getenv("SIMULATION_DAYS", 100))
-        self.real_seconds = real_seconds or float(os.getenv("SIMULATION_SPEED_SECONDS", 300))
+        from agents.config import SIMULATION
+        self.total_days = total_days or SIMULATION["DAYS"]
+        self.real_seconds = real_seconds or SIMULATION["SPEED_SECONDS"]
         self.tick_interval = self.real_seconds / self.total_days  # 1일당 배정된 물리 시간(초)
 
         self.current_day = 0

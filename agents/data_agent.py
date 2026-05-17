@@ -3,13 +3,7 @@ agents/data_agent.py
 --------------------
 Data Agent: 가상 SCM DB와 Mock API 서버를 주기적으로 스캔하여
 결측치/노이즈를 보정하고, Analysis Agent가 소비할 표준 DataDTO로 변환합니다.
-
-[처리 파이프라인]
-1. 가상 DB(JSON)에서 해당 일자 데이터 로드 (Sales가 아닌 Demand 추출)
-2. Mock API 서버에서 외부 신호(날씨, 거시경제, 리드타임) 수집 (가상 시간 동기화)
-3. 결측치 보정 (전일 이동평균으로 대체)
-4. 노이즈 보정 (3σ 기준치로 이상치 클리핑)
-5. 스트레스 이벤트 가중치 적용 (통계 오염 격리)
+추가로 GDELT 기상 리스크 분석 지표 및 구글 트렌드 연동 기능을 내재화하였습니다.
 """
 
 import json
@@ -18,7 +12,17 @@ import requests
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from dotenv import load_dotenv
+from pytrends.request import TrendReq
+
+from dto.schemas import DataDTO
+from utils.logger import get_logger
+from agents.config import PATHS, NETWORK
+from agents.data_config import build_weight_map, get_demand_impact_score
+
+logger = get_logger("DataAgent")
+MOCK_API_HOST = NETWORK["MOCK_API_HOST"]
+DATA_PATH = PATHS["SCM_DATA"]
+
 
 class GlobalIssueTracker:
     def __init__(self):
@@ -57,16 +61,6 @@ class GlobalIssueTracker:
             return {"risk_level": "Low", "average_tone": 0.0, "article_count": 0, "top_headline": ""}
 
 
-from dto.schemas import DataDTO
-from utils.logger import get_logger
-
-load_dotenv()
-logger = get_logger("DataAgent")
-
-MOCK_API_HOST = os.getenv("MOCK_API_HOST", "http://localhost:8080")
-DATA_PATH = os.getenv("SCM_DATA_PATH", "outputs/scm_dummy_data.json")
-
-
 class DataAgent:
     """
     SCM 데이터 수집 및 전처리 에이전트 (수학적 통계 오염 방지 적용)
@@ -78,7 +72,16 @@ class DataAgent:
         self._demand_history: list[float] = []
         self._lt_history: list[float] = []
         self._gdelt_tracker = GlobalIssueTracker()
-        logger.info(f"DataAgent 초기화 완료 | DB 레코드: {len(self._db)}일치 | GDELT API 연동 준비")
+        
+        # Pytrends 설정 및 키워드 가중치 로드
+        try:
+            self._pytrends = TrendReq(hl='ko', tz=540)
+        except Exception as e:
+            logger.warning(f"Pytrends 초기화 실패 (폴백 시뮬레이션 준비): {e}")
+            self._pytrends = None
+        self._weight_map = build_weight_map()
+
+        logger.info(f"DataAgent 초기화 완료 | DB 레코드: {len(self._db)}일치 | GDELT 및 Google Trends 연동 준비")
 
     def _load_db(self) -> list[dict]:
         if not os.path.exists(DATA_PATH):
@@ -86,6 +89,28 @@ class DataAgent:
         with open(DATA_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data
+
+    def _fetch_trend_signal(self) -> dict:
+        """
+        data_config.py의 키워드 매트릭스를 기반으로
+        Google Trends에서 급상승 키워드를 수집하고
+        get_demand_impact_score()로 가중 충격 지수를 반환합니다.
+        API 429 에러 등 실패 시 시뮬레이션 폴백 제공.
+        """
+        sample_keywords = ["물류 파업", "마스크", "금리 인상", "반도체 공급 부족", "유가 폭등"]
+        try:
+            if self._pytrends is None:
+                raise ValueError("pytrends is not initialized")
+            self._pytrends.build_payload(sample_keywords, timeframe='today 1-m', geo='KR')
+            df = self._pytrends.interest_over_time()
+            if df.empty:
+                return {"composite_score": 0.0, "matched_count": 0}
+            
+            trending = [kw for kw in sample_keywords if df[kw].tail(7).mean() > 50]
+            return get_demand_impact_score(trending, self._weight_map)
+        except Exception as e:
+            logger.debug(f"Google Trends 수집 폴백 작동: {e}")
+            return {"composite_score": 0.0, "matched_count": 0}
 
     def _fetch_external_signals(self, day: int) -> dict:
         """Mock API 서버에서 가상 시점(day)에 동기화된 외부 신호 수집"""
@@ -97,7 +122,6 @@ class DataAgent:
         }
 
         try:
-            # 쿼리 파라미터로 타임 시뮬레이터의 현재 일차(day) 전달
             res = requests.get(f"{MOCK_API_HOST}/api/external-signals?day={day}", timeout=3)
             signals = res.json()
 
@@ -133,7 +157,7 @@ class DataAgent:
         mean = np.mean(recent)
         std = np.std(recent)
 
-        lower = max(0.0, mean - 3 * std) # 수요는 음수가 될 수 없음
+        lower = max(0.0, mean - 3 * std)
         upper = mean + 3 * std
 
         if value < lower or value > upper:
@@ -144,13 +168,13 @@ class DataAgent:
 
     def collect(self, day: int, current_date, stress_event, current_stock: float) -> DataDTO:
         """
-        데이터 수집 및 정제 파이프라인 메인 (Analysis Agent로 표준 DTO 전달)
+        데이터 수집 및 전처리 파이프라인 메인 (Analysis Agent로 표준 DTO 전달)
         """
         stress_event = stress_event or {"is_stress": False}
         idx = (day - 1) % len(self._db)
         raw = self._db[idx]
 
-        # 1. 원시 데이터 추출 (Sales가 아닌 Demand 추출로 검열 방지)
+        # 1. 원시 데이터 추출 (Demand 추출로 검열 방지)
         raw_demand = raw.get("daily_demand", raw.get("daily_sales")) 
 
         # 2. 결측치 및 통계적 노이즈 보정
@@ -161,10 +185,8 @@ class DataAgent:
         base_lead_time = signals["lead_time_days"]
 
         # 4. 최종 확정된 전처리 데이터를 히스토리에 누적 (과거 창 생성)
-        # 스트레스 이벤트 배율이 적용되기 전의 순수 정제 데이터(Baseline)만 히스토리에 쌓음
         self._demand_history.append(float(clean_demand))
         self._lt_history.append(float(base_lead_time))
-
 
         # 5. 스트레스 테스트 시나리오 가중치 연산
         final_demand = clean_demand
@@ -175,15 +197,18 @@ class DataAgent:
             final_lead_time *= stress_event.get("lead_time_multiplier", 1.0)
             logger.warning(f"⚠️ [{day}일차] 스트레스 주입 완료: 수요 {final_demand:.0f} / 조달 {final_lead_time:.1f}일")
 
-        # 6. GDELT 공급망 리스크 스캔 (스트레스 이벤트와 연동 또는 기본 국가 검색)
+        # 6. GDELT 공급망 리스크 스캔
         gdelt_data = self._gdelt_tracker.fetch_supply_chain_risk_tone()
 
-        # 7. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달
+        # 7. Google Trends 수요 리스크 스캔
+        trend_signal = self._fetch_trend_signal()
+
+        # 8. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달
         return DataDTO(
             timestamp=datetime.now().isoformat(),
             day=day,
             daily_demand=float(final_demand),
-            current_stock=float(current_stock),  # 시뮬레이터에서 계산된 실시간 동적 재고 반영
+            current_stock=float(current_stock),
             lead_time_days=float(final_lead_time),
             weather_index=float(signals["weather_index"]),
             macro_trend=float(signals["macro_trend"]),
@@ -192,5 +217,7 @@ class DataAgent:
             gdelt_risk_level=gdelt_data["risk_level"],
             gdelt_average_tone=gdelt_data["average_tone"],
             gdelt_article_count=gdelt_data["article_count"],
-            gdelt_top_headline=gdelt_data.get("top_headline", "")
+            gdelt_top_headline=gdelt_data.get("top_headline", ""),
+            trend_composite_score=trend_signal["composite_score"],
+            trend_matched_count=trend_signal["matched_count"]
         )

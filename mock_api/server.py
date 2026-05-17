@@ -116,6 +116,9 @@ def get_lead_time():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("MOCK_API_PORT", 8080))
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from agents.config import NETWORK
+    port = NETWORK["MOCK_API_PORT"]
     print(f" * SCM Mock API Server starting on port {port}...")
     app.run(host="0.0.0.0", port=port, debug=False)
