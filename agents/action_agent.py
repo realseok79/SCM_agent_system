@@ -11,24 +11,23 @@ import json
 import os
 from datetime import datetime
 from collections import deque
-from dotenv import load_dotenv
 
 from dto.schemas import InventorySignalDTO, AlertLevel
 from utils.logger import get_logger
+from agents.config import PATHS, GUARDRAILS
 
-load_dotenv()
 logger = get_logger("ActionAgent")
 
 # ── 환경 변수 및 임계값 ─────────────────────────────────
-ORDER_OUTPUT_PATH = os.getenv("ORDER_OUTPUT_PATH", "outputs/order_list.json")
-REPORT_OUTPUT_PATH = os.getenv("REPORT_OUTPUT_PATH", "outputs/emergency_report.json")
-HISTORY_OUTPUT_PATH = os.getenv("HISTORY_OUTPUT_PATH", "outputs/order_history.json")
+ORDER_OUTPUT_PATH = PATHS["ORDER_OUTPUT"]
+REPORT_OUTPUT_PATH = PATHS["REPORT"]
+HISTORY_OUTPUT_PATH = PATHS["ORDER_HISTORY"]
 
 # 상대적 상한비 (계획서 요구사항: 30일 평균의 3배)
-MAX_ORDER_CEILING_RATIO = float(os.getenv("MAX_ORDER_CEILING_RATIO", 3.0))
+MAX_ORDER_CEILING_RATIO = GUARDRAILS["MAX_ORDER_CEILING_RATIO"]
 
 # 절대적 상한선 (초기 상태 발산 방지 및 창고 물리적 한계치)
-ABSOLUTE_MAX_CAPACITY = float(os.getenv("ABSOLUTE_MAX_CAPACITY", 5000.0))
+ABSOLUTE_MAX_CAPACITY = GUARDRAILS["ABSOLUTE_MAX_CAPACITY"]
 
 
 class ActionAgent:
@@ -37,8 +36,6 @@ class ActionAgent:
     """
 
     def __init__(self):
-        os.makedirs("outputs", exist_ok=True)
-
         self._order_history_30d: deque[float] = deque(maxlen=30)
         self._full_history: list[dict] = self._load_history()
 
@@ -120,7 +117,6 @@ class ActionAgent:
         return order
 
     def _issue_emergency_report(self, signal: InventorySignalDTO, order: dict) -> dict:
-        # 안전하게 문자열 추출
         current_level_str = signal.alert_level.value if isinstance(signal.alert_level, AlertLevel) else str(signal.alert_level)
         
         report = {
@@ -136,7 +132,7 @@ class ActionAgent:
                 {
                     "scenario": "A - 즉시 긴급 발주",
                     "action": f"최적 발주량 {signal.optimal_order_qty:.0f}개 즉시 집행",
-                    "recommended": current_level_str == "CRITICAL" # 문자열 기반 비교로 타입 일관성 확보
+                    "recommended": current_level_str == "CRITICAL"
                 },
                 {
                     "scenario": "B - 분할 발주",
@@ -147,12 +143,10 @@ class ActionAgent:
             "guardrail_status": order["status"]
         }
 
-        # ── [보완] 리포트 파일 덮어쓰기 전면 방지: 일차별 개별 저장 체계 구축 ──
         daily_report_path = f"outputs/emergency_report_day{signal.day:03d}.json"
         with open(daily_report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
 
-        # 시스템 모니터링을 위해 고유 저장 경로 로그 출력
         logger.warning(f"🚨 시스템 비상 모드 가동 [{current_level_str}] 리포트 발행 완료 ➔ {daily_report_path}")
         return report
 
@@ -168,7 +162,6 @@ class ActionAgent:
         """
         제어 변수(승인된 발주량)를 시뮬레이터로 반환하여 상태 피드백 루프를 완성합니다.
         """
-        # 스트링 비교가 아닌 Enum 비교로 안전성 극대화
         if signal.alert_level == AlertLevel.NORMAL:
             return {
                 "action": "NO_ORDER",
@@ -186,7 +179,6 @@ class ActionAgent:
 
         self._save_history(order)
 
-        # 시스템이 실제로 승인한 발주량 (BLOCKED인 경우 0.0으로 처리되어 시뮬레이터에 반영됨)
         approved_qty = signal.optimal_order_qty if guardrail["status"] == "APPROVED" else 0.0
 
         result = {

@@ -1,28 +1,54 @@
 import json, os, sys, pandas as pd, numpy as np, matplotlib.pyplot as plt
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 from matplotlib import rc
 import streamlit as st
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-st.set_page_config(page_title="SCM Agent Dashboard", page_icon="📦", layout="wide", initial_sidebar_state="collapsed")
+from utils.macro_connector import GlobalMacroEngine
+st.set_page_config(page_title="SCM Agent Dashboard", page_icon="📦", layout="wide", initial_sidebar_state="expanded")
 plt.rcParams["axes.unicode_minus"] = False
 for f in ["AppleGothic","NanumGothic","Malgun Gothic"]:
     try: rc("font",family=f); break
     except: continue
 
-SCM_DATA_PATH=os.getenv("SCM_DATA_PATH","outputs/scm_dummy_data.json")
-ORDER_HISTORY_PATH=os.getenv("HISTORY_OUTPUT_PATH","outputs/order_history.json")
-EMERGENCY_PATH=os.getenv("REPORT_OUTPUT_PATH","outputs/emergency_report.json")
+from agents.config import PATHS
+SCM_DATA_PATH = PATHS["SCM_DATA"]
+ORDER_HISTORY_PATH = PATHS["ORDER_HISTORY"]
+EMERGENCY_PATH = PATHS["REPORT"]
 SS={30:"수요5x",60:"조달3주↑",80:"복합위기"}
 
-st.markdown("""<style>
+st.markdown("""
+<style>
+/* ── Base ── */
 .stApp{background:#202124;color:#e8eaed}
-[data-testid="collapsedControl"]{display:none}
-.block-container{padding:0.5rem 1rem 0 1rem !important;max-width:100% !important}
-div[data-testid="stVerticalBlock"]>div{gap:0.3rem !important}
-.hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:8px 16px 6px;margin:-0.5rem -1rem 0.4rem}
-.hdr-t{font-size:15px;font-weight:500;color:#e8eaed}.hdr-s{font-size:11px;color:#9aa0a6;margin-top:1px}
+/* Force main content container to stretch full width dynamically, removing empty side gutters */
+.block-container, 
+[data-testid="stMainBlockContainer"], 
+[data-testid="stAppViewBlockContainer"],
+.stApp .block-container,
+.stApp [data-testid="stMainBlockContainer"],
+.stApp [data-testid="stAppViewBlockContainer"] {
+    padding: 0 1.5rem 0 1.5rem !important;
+    max-width: 98% !important;
+    width: 98% !important;
+}
+div[data-testid="stMain"] {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* ── Native Sidebar Styling ── */
+section[data-testid="stSidebar"] {
+    background-color: #202124 !important;
+    border-right: 1px solid #3c4043 !important;
+}
+
+/* ── Header ── */
+.hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:16px 16px 10px 16px;margin:0 -1.5rem 0.6rem !important;display:flex;align-items:center;gap:14px}
+.hdr-t{font-size:15px;font-weight:500;color:#e8eaed}
+.hdr-s{font-size:11px;color:#9aa0a6;margin-top:1px}
+
+/* ── Dashboard styles ── */
 .sec{font-size:10px;font-weight:500;color:#9aa0a6;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #3c4043;padding-bottom:4px;margin:0.5rem 0 0.3rem}
 .kg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:0.3rem}
 .kc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 12px}
@@ -54,7 +80,8 @@ div[data-testid="stVerticalBlock"]>div{gap:0.3rem !important}
 .fb{font-size:9px;color:#5f6368;text-align:right;padding-top:4px;border-top:1px solid #3c4043;margin-top:0.3rem}
 div[data-testid="metric-container"]{display:none}
 div[data-testid="stButton"] button{display:none !important}
-</style>""", unsafe_allow_html=True)
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=1)
 def load_scm():
@@ -145,13 +172,16 @@ def c_rop(df):
     sax(ax);mst(ax,df);ax.set_xlabel("Day",fontsize=7);ax.set_ylabel("units",fontsize=7)
     ax.legend(fontsize=6,framealpha=0,loc="upper right",labelcolor=TX);f.tight_layout(pad=0.5);return f
 
-def c_ord(orders):
+def c_ord(orders, df):
     if not orders: return None
     do=pd.DataFrame(orders);f,ax=mk(1.8)
     ap=do[do["status"]=="APPROVED"];bl=do[do["status"]=="BLOCKED"]
     if not ap.empty: ax.bar(ap["day"],ap["order_qty"],color=CL["o"],alpha=.8,width=.8,label="승인")
     if not bl.empty: ax.bar(bl["day"],bl["order_qty"],color=CL["x"],alpha=.6,width=.8,label="차단")
     sax(ax);ax.set_xlabel("Day",fontsize=7);ax.set_ylabel("units",fontsize=7)
+    max_day = int(df["day_index"].max() + 1) if df is not None and "day_index" in df.columns else 100
+    ax.set_xlim(1, max_day)
+    mst(ax, df)
     ax.legend(fontsize=6,framealpha=0,loc="upper right",labelcolor=TX);f.tight_layout(pad=0.5);return f
 
 def render_main_dashboard():
@@ -161,7 +191,7 @@ def render_main_dashboard():
     emg=load_emg(cd)
 
     # ROW 0: Header
-    st.markdown(f'<div class="hdr"><div class="hdr-t">📦 SCM 자율 에이전트 100일 압축 시뮬레이션 대시보드</div><div class="hdr-s">Team Sigma | Data→Analysis→Action 관제탑 &nbsp;·&nbsp; Day {cd}/100 &nbsp;·&nbsp; {datetime.now().strftime("%H:%M:%S")} 실시간</div></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="hdr"><div><div class="hdr-t">SCM 자율 에이전트 100일 압축 시뮬레이션 대시보드</div><div class="hdr-s">Team Sigma | Data→Analysis→Action 관제탑 &nbsp;·&nbsp; Day {cd}/100 &nbsp;·&nbsp; {datetime.now().strftime("%H:%M:%S")} 실시간</div></div></div>',unsafe_allow_html=True)
 
     if df is None:
         st.error("❌ 데이터 없음 — `python main.py` 실행 필요");st.stop()
@@ -181,20 +211,20 @@ def render_main_dashboard():
     r2a,r2b=st.columns(2)
     with r2a:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>재고 변동 · ROP · SS</div>',unsafe_allow_html=True)
-        st.pyplot(c_stock(df,orders));st.markdown('</div>',unsafe_allow_html=True)
+        st.pyplot(c_stock(df,orders), use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
     with r2b:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>일일 수요량 추이</div>',unsafe_allow_html=True)
-        st.pyplot(c_sales(df));st.markdown('</div>',unsafe_allow_html=True)
+        st.pyplot(c_sales(df), use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
 
     # ROW 3: Left=ROP+발주 차트 세로 스택 / Right=이력 테이블+비상 보고서
     r3L,r3R=st.columns([1.2,1])
     with r3L:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>동적 발주점 (ROP) 변화 추이</div>',unsafe_allow_html=True)
-        st.pyplot(c_rop(df));st.markdown('</div>',unsafe_allow_html=True)
-        fo=c_ord(orders)
+        st.pyplot(c_rop(df), use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
+        fo=c_ord(orders, df)
         if fo:
             st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#fdd663"></span>발주 타임라인 (승인 / 차단)</div>',unsafe_allow_html=True)
-            st.pyplot(fo);st.markdown('</div>',unsafe_allow_html=True)
+            st.pyplot(fo, use_container_width=True);st.markdown('</div>',unsafe_allow_html=True)
     with r3R:
         st.markdown('<div class="sec">📋 전체 발주 제어 상세 이력부</div>',unsafe_allow_html=True)
         if orders:
@@ -235,258 +265,24 @@ def render_main_dashboard():
 import requests
 import yfinance as yf
 import ssl
-import cloudscraper
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-
-ssl._create_default_https_context = ssl._create_unverified_context
-
-def _selenium_crawl_table(url):
-    """Selenium 공용 테이블 크롤러 (TradingEconomics용)"""
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    try:
-        driver = webdriver.Chrome(options=options)
-        driver.set_page_load_timeout(15)
-        driver.get(url)
-        html = driver.page_source
-        driver.quit()
-        soup = BeautifulSoup(html, "html.parser")
-        table = soup.find("table")
-        if not table: return None
-        rows_data = []
-        for row in table.find_all("tr"):
-            cols = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
-            if len(cols) > 2: rows_data.append(cols)
-        if rows_data:
-            df = pd.DataFrame(rows_data)
-            df.columns = df.iloc[0]
-            return df[1:].reset_index(drop=True)
-    except: pass
-    return None
-
-@st.cache_data(ttl=600, show_spinner=False)
-def crawl_te_inflation():
-    df = _selenium_crawl_table("https://ko.tradingeconomics.com/country-list/inflation-rate?continent=world")
-    if df is None: raise ValueError("TE Inflation table empty")
-    return df
-
-@st.cache_data(ttl=600, show_spinner=False)
-def crawl_te_interest_rate():
-    df = _selenium_crawl_table("https://ko.tradingeconomics.com/country-list/interest-rate?continent=world")
-    if df is None: raise ValueError("TE Rate table empty")
-    return df
-
-@st.cache_data(ttl=600, show_spinner=False)
-def crawl_investing_indices():
-    """Investing.com 주요지수 크롤러 (cloudscraper - Cloudflare 우회)"""
-    url = "https://kr.investing.com/indices/major-indices"
-    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
-    try:
-        resp = scraper.get(url, timeout=10)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            table = soup.find("table")
-            if not table: raise ValueError("Investing table empty")
-            rows_data = []
-            for row in table.find_all("tr"):
-                cols = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
-                if len(cols) > 2: rows_data.append(cols)
-            if rows_data:
-                df = pd.DataFrame(rows_data)
-                df.columns = df.iloc[0]
-                return df[1:].reset_index(drop=True)
-    except: pass
-    raise ValueError("Investing crawl failed")
-
-# --- [내장형 매크로 엔진] ---
-class LocalMacroEngine:
-    def __init__(self):
-        pass
-
-    def fetch_unified_macro_vector(self, country_name):
-        # WTI 유가 (yfinance)
-        wti_oil_price, wti_oil_change = 0.0, 0.0
-        try:
-            oil_hist = yf.download("CL=F", period="7d", progress=False)
-            if not oil_hist.empty and 'Close' in oil_hist.columns:
-                cd = oil_hist['Close'].iloc[:, 0] if isinstance(oil_hist['Close'], pd.DataFrame) else oil_hist['Close']
-                cd = cd.sort_index()
-                if len(cd) >= 2:
-                    wti_oil_price = float(cd.iloc[-1])
-                    wti_oil_change = ((wti_oil_price - float(cd.iloc[-2])) / float(cd.iloc[-2])) * 100
-        except: pass
-
-        # 국가별 레지스트리: kr_idx = Investing.com 한글 종목명, te_country = TE 한글 국명, yf_idx = 백업용 야후파이낸스
-        country_registry = {
-            "Argentina": {"fx": "USDARS=X", "kr_idx": "메르발", "te_country": "아르헨티나", "currency": "ARS", "yf_idx": "^MERV"},
-            "Australia": {"fx": "AUDUSD=X", "kr_idx": "호주 S&P/ASX", "te_country": "호주", "currency": "AUD", "yf_idx": "^AXJO"},
-            "Belgium": {"fx": "EURUSD=X", "kr_idx": "벨기에 BELderived", "te_country": "벨기에", "currency": "EUR", "yf_idx": "^BFX"},
-            "Brazil": {"fx": "USDBRL=X", "kr_idx": "브라질 보베스파", "te_country": "브라질", "currency": "BRL", "yf_idx": "^BVSP"},
-            "Canada": {"fx": "USDCAD=X", "kr_idx": "캐나다 S&P/TSX", "te_country": "캐나다", "currency": "CAD", "yf_idx": "^GSPTSE"},
-            "China": {"fx": "USDCNY=X", "kr_idx": "상해종합", "te_country": "중국", "currency": "CNY", "yf_idx": "000001.SS"},
-            "Egypt": {"fx": "USDEGP=X", "kr_idx": "EGX 30", "te_country": "이집트", "currency": "EGP", "yf_idx": None},
-            "France": {"fx": "EURUSD=X", "kr_idx": "프랑스 CAC", "te_country": "프랑스", "currency": "EUR", "yf_idx": "^FCHI"},
-            "Germany": {"fx": "EURUSD=X", "kr_idx": "DAXderived", "te_country": "독일", "currency": "EUR", "yf_idx": "^GDAXI"},
-            "India": {"fx": "USDINR=X", "kr_idx": "인도 센섹스", "te_country": "인도", "currency": "INR", "yf_idx": "^BSESN"},
-            "Indonesia": {"fx": "USDIDR=X", "kr_idx": "인도네시아 IDX", "te_country": "인도네시아", "currency": "IDR", "yf_idx": "^JKSE"},
-            "Italy": {"fx": "EURUSD=X", "kr_idx": "이탈리아 FTSE MIBderived", "te_country": "이탈리아", "currency": "EUR", "yf_idx": "FTSEMIB.MI"},
-            "Japan": {"fx": "USDJPY=X", "kr_idx": "닛케이derived", "te_country": "일본", "currency": "JPY", "yf_idx": "^N225"},
-            "Mexico": {"fx": "USDMXN=X", "kr_idx": "S&P/BMV IPC", "te_country": "멕시코", "currency": "MXN", "yf_idx": "^MXX"},
-            "Netherlands": {"fx": "EURUSD=X", "kr_idx": "네덜란드 AEX", "te_country": "네덜란드", "currency": "EUR", "yf_idx": "^AEX"},
-            "New Zealand": {"fx": "NZDUSD=X", "kr_idx": "뉴질랜드 50", "te_country": "뉴질랜드", "currency": "NZD", "yf_idx": "^NZ50"},
-            "Philippines": {"fx": "USDPHP=X", "kr_idx": "PSEi Composite", "te_country": "필리핀", "currency": "PHP", "yf_idx": "PSEI.PS"},
-            "Saudi Arabia": {"fx": "USDSAR=X", "kr_idx": "사우디아라비아 Tadawul", "te_country": "사우디 아라비아", "currency": "SAR", "yf_idx": "^TASI.SR"},
-            "South Africa": {"fx": "USDZAR=X", "kr_idx": "남아프리카 Top 40", "te_country": "남아프리카 공화국", "currency": "ZAR", "yf_idx": "^J203.JO"},
-            "South Korea": {"fx": "USDKRW=X", "kr_idx": "코스피지수", "te_country": "대한민국", "currency": "KRW", "yf_idx": "^KS11"},
-            "Spain": {"fx": "EURUSD=X", "kr_idx": "스페인 IBEXderived", "te_country": "스페인", "currency": "EUR", "yf_idx": "^IBEX"},
-            "Switzerland": {"fx": "USDCHF=X", "kr_idx": "스위스 SMIderived", "te_country": "스위스", "currency": "CHF", "yf_idx": "^SSMI"},
-            "Taiwan": {"fx": "USDTWD=X", "kr_idx": "대만 가권", "te_country": "대만", "currency": "TWD", "yf_idx": "^TWII"},
-            "Thailand": {"fx": "USDTHB=X", "kr_idx": "SET", "te_country": "태국", "currency": "THB", "yf_idx": "^SET.BK"},
-            "Turkey": {"fx": "USDTRY=X", "kr_idx": "터키 BIST", "te_country": "터키", "currency": "TRY", "yf_idx": "XU100.IS"},
-            "United Arab Emirates": {"fx": "USDAED=X", "kr_idx": "DFM 일반", "te_country": "아랍 에미리트", "currency": "AED", "yf_idx": None},
-            "United Kingdom": {"fx": "GBPUSD=X", "kr_idx": "영국 FTSEderived", "te_country": "연합 왕국", "currency": "GBP", "yf_idx": "^FTSE"},
-            "United States": {"fx": None, "kr_idx": "S&P 500derived", "te_country": "미국", "currency": "USD", "yf_idx": "^GSPC"},
-            "Vietnam": {"fx": "USDVND=X", "kr_idx": "VN 30", "te_country": "베트남", "currency": "VND", "yf_idx": "^VNINDEX.HM"},
-            "Singapore": {"fx": "USDSGD=X", "kr_idx": None, "te_country": "싱가포르", "currency": "SGD", "yf_idx": "^STI"},
-        }
-        cfg = country_registry.get(country_name, {"fx": None, "kr_idx": None, "te_country": None, "currency": "Unknown", "yf_idx": None})
-
-        # (A) 환율 (yfinance)
-        fx_val, fx_chg = 1.0, 0.0
-        if cfg["fx"]:
-            try:
-                fh = yf.download(cfg["fx"], period="7d", progress=False)
-                if not fh.empty and 'Close' in fh.columns:
-                    cd = fh['Close'].iloc[:, 0] if isinstance(fh['Close'], pd.DataFrame) else fh['Close']
-                    cd = cd.sort_index()
-                    if len(cd) >= 2:
-                        fx_val = float(cd.iloc[-1])
-                        fx_chg = ((fx_val - float(cd.iloc[-2])) / float(cd.iloc[-2])) * 100
-            except: pass
-
-        # (B) 주가지수 (Investing.com 크롤링) -> 실패/부재 시 yfinance 폴백
-        idx_val, idx_chg = 0.0, 0.0
-        idx_display_name = cfg.get("kr_idx")
-        if idx_display_name:
-            try:
-                scraped_idx = crawl_investing_indices()
-                if scraped_idx is not None and '종목명' in scraped_idx.columns:
-                    matched = scraped_idx[scraped_idx['종목명'] == idx_display_name]
-                    if not matched.empty:
-                        idx_val = float(matched.iloc[0]['종가'].replace(',', ''))
-                        idx_chg = float(matched.iloc[0]['변동 %'].replace('%', '').replace('+', ''))
-            except: pass
-            
-        if idx_val == 0.0 and cfg.get("yf_idx"):
-            try:
-                yh = yf.download(cfg["yf_idx"], period="7d", progress=False)
-                if not yh.empty and 'Close' in yh.columns:
-                    cd = yh['Close'].iloc[:, 0] if isinstance(yh['Close'], pd.DataFrame) else yh['Close']
-                    cd = cd.sort_index()
-                    if len(cd) >= 2:
-                        idx_val = float(cd.iloc[-1])
-                        idx_chg = ((idx_val - float(cd.iloc[-2])) / float(cd.iloc[-2])) * 100
-            except: pass
-
-        # (C) 기준금리 (TradingEconomics 크롤링)
-        domestic_rate = None
-        te_name = cfg.get("te_country")
-        eurozone_countries = ["독일", "프랑스", "스페인", "벨기에", "이탈리아", "네덜란드"]
-        rate_te_name = "유럽​​ 지역" if te_name in eurozone_countries else te_name
-
-        if rate_te_name:
-            try:
-                scraped_rate = crawl_te_interest_rate()
-                if scraped_rate is not None and '국가' in scraped_rate.columns:
-                    matched = scraped_rate[scraped_rate['국가'] == rate_te_name]
-                    if not matched.empty:
-                        domestic_rate = float(matched.iloc[0]['마지막'])
-            except: pass
-
-        # (D) 물가상승률 (TradingEconomics 크롤링)
-        domestic_inflation = None
-        if te_name:
-            try:
-                scraped_inf = crawl_te_inflation()
-                if scraped_inf is not None and '국가' in scraped_inf.columns:
-                    matched = scraped_inf[scraped_inf['국가'] == te_name]
-                    if not matched.empty:
-                        domestic_inflation = float(matched.iloc[0]['마지막'])
-            except: pass
-
-        calculated_risk = min(100.0, max(0.0, (abs(fx_chg) * 30 + abs(idx_chg) * 30 + abs(wti_oil_change) * 40)))
-        clean_idx_name = idx_display_name.replace('derived', '') if idx_display_name else None
-
-        return {
-            "country": country_name, "currency_code": cfg["currency"], "fx_ticker": cfg["fx"],
-            "fx_value": round(fx_val, 2), "fx_change_pct": round(fx_chg, 2), "index_ticker": clean_idx_name,
-            "index_value": round(idx_val, 2), "index_change_pct": round(idx_chg, 2),
-            "oil_price": round(wti_oil_price, 2), "oil_change_pct": round(wti_oil_change, 2),
-            "interest_rate": round(domestic_rate, 2) if domestic_rate is not None else None,
-            "inflation_rate": round(domestic_inflation, 2) if domestic_inflation is not None else None,
-            "integrated_risk_score": round(calculated_risk, 2),
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-@st.cache_data
-def load_wmo_master():
-    csv_path = "data/wmo_station_master.csv"
-    os.makedirs("data", exist_ok=True)
-    if not os.path.exists(csv_path) or os.path.getsize(csv_path) < 1000:
-        world_data = {"country": [], "station_name": [], "station_id": [], "latitude": [], "longitude": []}
-        all_regions = {
-            "South Korea": [(152, "Ulsan", 35.5389, 129.3114), (159, "Busan", 35.1017, 129.0300), (108, "Seoul", 37.5665, 126.9780)],
-            "Japan": [(47662, "Tokyo", 35.6895, 139.6917), (47740, "Osaka", 34.6937, 135.5023), (47807, "Fukuoka", 33.5904, 130.4017)],
-            "China": [(58362, "Shanghai", 31.4000, 121.4667), (54511, "Beijing", 39.9042, 116.4074)],
-            "Singapore": [(48698, "Singapore Changi", 1.3521, 103.9940)],
-            "Australia": [(94768, "Sydney", -33.8688, 151.2093), (94608, "Adelaide", -34.9285, 138.6007)],
-            "Taiwan": [(58968, "Taipei", 25.0330, 121.5654)],
-            "Germany": [(10382, "Berlin", 52.5200, 13.4050), (10637, "Frankfurt", 50.1109, 8.6821)],
-            "Spain": [(8221, "Madrid", 40.4168, -3.7048), (8181, "Barcelona", 41.3851, 2.1734)],
-            "United States": [(72295, "Los Angeles", 33.9416, -118.4085), (74486, "New York JFK", 40.6397, -73.7789)]
-        }
-        for country_name, stations in all_regions.items():
-            for stn_id, name, lat, lon in stations:
-                world_data["country"].append(country_name)
-                world_data["station_name"].append(name)
-                world_data["station_id"].append(stn_id)
-                world_data["latitude"].append(lat)
-                world_data["longitude"].append(lon)
-        pd.DataFrame(world_data).to_csv(csv_path, index=False)
-    return pd.read_csv(csv_path)
-
-def get_live_weather_by_station(station_id):
-    utc_now = datetime.now(datetime.timezone.utc) if hasattr(datetime, 'timezone') else datetime.utcnow()
-    target_time = (utc_now - pd.Timedelta(hours=2)).strftime("%Y%m%d%H00")
-    kma_key = st.secrets.get("KMA_AUTH_KEY", os.environ.get("KMA_AUTH_KEY", ""))
-    params = {"tm": target_time, "dtm": "3", "stn": int(station_id), "help": "0", "authKey": kma_key}
-    try:
-        response = requests.get(url, params=params, timeout=7)
-        return response.text if response.status_code == 200 else "⚠️ 기상 데이터 지연"
-    except: return "🚨 기상 스트림 통신 오류"
+from utils.weather_connector import load_wmo_master, get_live_weather_by_station
 
 def main():
     st.sidebar.title("SCM 관제 시스템 메뉴")
-    menu = st.sidebar.radio("이동", ["메인 대시보드", "글로벌 기상 임베딩"])
+    menu = st.sidebar.radio("이동", ["메인 대시보드", "글로벌 공급망 리스크 관제탑"])
 
     if menu == "메인 대시보드":
         render_main_dashboard()
-    elif menu == "글로벌 기상 임베딩":
-        st.title("🛰️ SCM 글로벌 관제 제어 센터")
+    elif menu == "글로벌 공급망 리스크 관제탑":
+        st.markdown(f'<div class="hdr"><div><div class="hdr-t">글로벌 공급망 리스크 관제탑</div><div class="hdr-s">Global Supply Chain Risk Control Tower &nbsp;·&nbsp; 실시간 국가별 거점 리스크 및 기상 관제</div></div></div>',unsafe_allow_html=True)
         
         wmo_master_df = load_wmo_master()
-        st.sidebar.header("🔍 글로벌 SCM 거점 초고속 검색")
         available_countries = [c for c in sorted(wmo_master_df['country'].dropna().unique()) if c != "Malaysia"]
         
-        selected_country = st.sidebar.selectbox("🏳️🌈 1. 대상 국가 선택", options=available_countries, index=available_countries.index("South Korea") if "South Korea" in available_countries else 0)
+        col_sel1, col_sel2 = st.columns(2)
+        selected_country = col_sel1.selectbox("대상 국가", options=available_countries, index=available_countries.index("South Korea") if "South Korea" in available_countries else 0)
         filtered_stations = wmo_master_df[wmo_master_df['country'] == selected_country]
-        selected_station_name = st.sidebar.selectbox(f"🏙️ 2. {selected_country} 내 허브 거점 선택", options=filtered_stations['station_name'])
+        selected_station_name = col_sel2.selectbox(f"{selected_country} 내 허브 거점", options=filtered_stations['station_name'])
         
         matched_station = filtered_stations[filtered_stations['station_name'] == selected_station_name].iloc[0]
         
@@ -495,7 +291,7 @@ def main():
         st.markdown("---")
         st.markdown(f"### 📊 {selected_country} 중심 공급망 리스크 벡터")
         
-        macro_engine = LocalMacroEngine()
+        macro_engine = GlobalMacroEngine()
         data_vector = macro_engine.fetch_unified_macro_vector(selected_country)
         
         # 1계층 지표
@@ -523,6 +319,6 @@ def main():
             
         st.markdown("---")
         st.markdown("### 📡 기상청 GTS 실시간 수집 RAW 전문 스트림")
-        st.code(get_live_weather_by_station(matched_station['station_id']), language="text")
+        st.code(get_live_weather_by_station(matched_station['station_id'], matched_station['latitude'], matched_station['longitude']), language="text")
 
 if __name__=="__main__": main()
