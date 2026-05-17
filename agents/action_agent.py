@@ -191,3 +191,59 @@ class ActionAgent:
 
         logger.info(f"[{signal.day}일차] 액션: {result['action']} | 최종 집행량: {approved_qty:.0f}개")
         return result
+
+    def validate_guardrails(self, item_name: str, quantity: float) -> tuple[bool, str]:
+        """
+        [가드레일 검증] 발주 수량이 음수이거나 최대 창고 한계를 초과하는지 검증합니다.
+        """
+        if quantity <= 0:
+            reason = f"수량이 올바르지 않습니다. (요청 수량: {quantity})"
+            logger.error(f"⚠️ [Guardrail Rejected] {reason}")
+            return False, reason
+            
+        if quantity > ABSOLUTE_MAX_CAPACITY:
+            reason = f"발주량이 창고 최대 용량({ABSOLUTE_MAX_CAPACITY})을 초과했습니다. (요청 수량: {quantity})"
+            logger.error(f"⚠️ [Guardrail Rejected] {reason}")
+            return False, reason
+            
+        return True, "안전 검증 통과"
+
+    def execute_and_publish(self, item_name: str, quantity: float, category: str) -> dict:
+        """
+        가드레일을 통과한 안전한 발주 건에 대해서만 outputs/order_list.json 파일로 발행 및 누적 저장하는 로직.
+        """
+        is_safe, reason = self.validate_guardrails(item_name, quantity)
+        if not is_safe:
+            return {"status": "REJECTED", "reason": reason}
+            
+        order_item = {
+            "order_id": f"ORD-FRICT-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "timestamp": datetime.now().isoformat(),
+            "item_name": item_name,
+            "order_qty": quantity,
+            "category": category,
+            "status": "APPROVED",
+            "reason": reason
+        }
+        
+        # outputs/order_list.json 에 저장 (기존 데이터가 리스트 또는 단일 딕셔너리인지 안전하게 검사)
+        list_path = "outputs/order_list.json"
+        order_list = []
+        if os.path.exists(list_path):
+            try:
+                with open(list_path, "r", encoding="utf-8") as f:
+                    content = json.load(f)
+                    if isinstance(content, list):
+                        order_list = content
+                    elif isinstance(content, dict):
+                        order_list = [content]
+            except Exception:
+                order_list = []
+                
+        order_list.append(order_item)
+        
+        with open(list_path, "w", encoding="utf-8") as f:
+            json.dump(order_list, f, ensure_ascii=False, indent=2)
+            
+        logger.info(f"✨ [Zero-Friction] 발주서 발행 완료 -> {list_path} ({item_name}: {quantity}개)")
+        return {"status": "APPROVED", "order_id": order_item["order_id"], "data": order_item}
