@@ -461,15 +461,46 @@ def load_wmo_master():
         pd.DataFrame(world_data).to_csv(csv_path, index=False)
     return pd.read_csv(csv_path)
 
-def get_live_weather_by_station(station_id):
+def get_live_weather_by_station(station_id, lat=None, lon=None):
     utc_now = datetime.now(datetime.timezone.utc) if hasattr(datetime, 'timezone') else datetime.utcnow()
     target_time = (utc_now - pd.Timedelta(hours=2)).strftime("%Y%m%d%H00")
-    kma_key = st.secrets.get("KMA_AUTH_KEY", os.environ.get("KMA_AUTH_KEY", ""))
-    params = {"tm": target_time, "dtm": "3", "stn": int(station_id), "help": "0", "authKey": kma_key}
-    try:
-        response = requests.get(url, params=params, timeout=7)
-        return response.text if response.status_code == 200 else "⚠️ 기상 데이터 지연"
-    except: return "🚨 기상 스트림 통신 오류"
+    kma_key = st.secrets.get("KMA_API_KEY", os.environ.get("KMA_API_KEY", ""))
+    url = "https://apihub.kma.go.kr/api/typ01/url/gts_syn1.php"
+    
+    kma_text = ""
+    if kma_key:
+        params = {"tm": target_time, "dtm": "3", "stn": int(station_id), "help": "0", "authKey": kma_key}
+        try:
+            response = requests.get(url, params=params, timeout=7)
+            if response.status_code == 200:
+                if "AUTH_ERROR" in response.text or "ERROR" in response.text:
+                    kma_text = f"⚠️ 기상청 API 에러: {response.text.strip()}"
+                else:
+                    # 실제 데이터 라인이 있는지 검사 (숫자로 시작하는 줄)
+                    has_data = any(line.strip() and line.strip()[0].isdigit() for line in response.text.split('\n'))
+                    if has_data:
+                        return response.text
+        except Exception as e:
+            pass
+
+    # KMA 데이터가 없거나 에러가 났을 때 OpenWeatherMap으로 Fallback
+    if lat is not None and lon is not None:
+        ow_key = st.secrets.get("OPENWEATHER_API_KEY", os.environ.get("OPENWEATHER_API_KEY", ""))
+        if ow_key:
+            ow_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={ow_key}&units=metric"
+            try:
+                res = requests.get(ow_url, timeout=7)
+                if res.status_code == 200:
+                    data = res.json()
+                    desc = data.get("weather", [{}])[0].get("description", "Unknown")
+                    temp = data.get("main", {}).get("temp", "N/A")
+                    humidity = data.get("main", {}).get("humidity", "N/A")
+                    wind = data.get("wind", {}).get("speed", "N/A")
+                    return f"[OpenWeatherMap 대체 데이터 (KMA 미수신/지연)]\n상태: {desc}\n온도: {temp}°C\n습도: {humidity}%\n풍속: {wind}m/s"
+            except: pass
+            
+    if kma_text: return kma_text
+    return "⚠️ 기상 데이터 지연 및 대체 데이터 수신 실패"
 
 def main():
     st.sidebar.title("SCM 관제 시스템 메뉴")
@@ -523,6 +554,6 @@ def main():
             
         st.markdown("---")
         st.markdown("### 📡 기상청 GTS 실시간 수집 RAW 전문 스트림")
-        st.code(get_live_weather_by_station(matched_station['station_id']), language="text")
+        st.code(get_live_weather_by_station(matched_station['station_id'], matched_station['latitude'], matched_station['longitude']), language="text")
 
 if __name__=="__main__": main()

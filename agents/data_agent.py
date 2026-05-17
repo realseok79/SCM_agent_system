@@ -16,8 +16,46 @@ import json
 import os
 import requests
 import numpy as np
+import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
+
+class GlobalIssueTracker:
+    def __init__(self):
+        # GDELT DOC 2.0 API 엔드포인트 (API Key 불필요)
+        self.base_url = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+    def fetch_supply_chain_risk_tone(self, target_country="Taiwan", issue_keyword="strike OR delay OR block OR supply chain"):
+        query = f'"{target_country}" AND ({issue_keyword})'
+        params = {
+            "query": query,
+            "mode": "ArtList",
+            "maxrecords": 50,
+            "format": "json",
+            "timespan": "3d"
+        }
+        try:
+            response = requests.get(self.base_url, params=params, timeout=5)
+            if response.status_code == 200 and len(response.text) > 0:
+                data = response.json()
+                if "articles" not in data or not data["articles"]:
+                    return {"risk_level": "Low", "average_tone": 0.0, "article_count": 0, "top_headline": ""}
+
+                df = pd.DataFrame(data["articles"])
+                average_tone = df['tone'].mean()
+                article_count = len(df)
+                
+                risk_level = "High" if average_tone < -3.0 else ("Medium" if average_tone < -1.0 else "Low")
+                return {
+                    "risk_level": risk_level,
+                    "average_tone": round(average_tone, 2),
+                    "article_count": article_count,
+                    "top_headline": df.iloc[0]['title']
+                }
+            return {"risk_level": "Low", "average_tone": 0.0, "article_count": 0, "top_headline": ""}
+        except Exception as e:
+            return {"risk_level": "Low", "average_tone": 0.0, "article_count": 0, "top_headline": ""}
+
 
 from dto.schemas import DataDTO
 from utils.logger import get_logger
@@ -39,7 +77,8 @@ class DataAgent:
         # 통계적 기준선 및 Analysis Agent 전달용 시계열 Buffer 초기화
         self._demand_history: list[float] = []
         self._lt_history: list[float] = []
-        logger.info(f"DataAgent 초기화 완료 | DB 레코드: {len(self._db)}일치")
+        self._gdelt_tracker = GlobalIssueTracker()
+        logger.info(f"DataAgent 초기화 완료 | DB 레코드: {len(self._db)}일치 | GDELT API 연동 준비")
 
     def _load_db(self) -> list[dict]:
         if not os.path.exists(DATA_PATH):
@@ -136,7 +175,10 @@ class DataAgent:
             final_lead_time *= stress_event.get("lead_time_multiplier", 1.0)
             logger.warning(f"⚠️ [{day}일차] 스트레스 주입 완료: 수요 {final_demand:.0f} / 조달 {final_lead_time:.1f}일")
 
-        # 6. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달
+        # 6. GDELT 공급망 리스크 스캔 (스트레스 이벤트와 연동 또는 기본 국가 검색)
+        gdelt_data = self._gdelt_tracker.fetch_supply_chain_risk_tone()
+
+        # 7. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달
         return DataDTO(
             timestamp=datetime.now().isoformat(),
             day=day,
@@ -145,7 +187,10 @@ class DataAgent:
             lead_time_days=float(final_lead_time),
             weather_index=float(signals["weather_index"]),
             macro_trend=float(signals["macro_trend"]),
-            # 확장 필드 바인딩 (메모리 참조 오염 방지를 위해 list()로 복사본 전달)
             history_demand=list(self._demand_history),
-            history_lead_time=list(self._lt_history)
+            history_lead_time=list(self._lt_history),
+            gdelt_risk_level=gdelt_data["risk_level"],
+            gdelt_average_tone=gdelt_data["average_tone"],
+            gdelt_article_count=gdelt_data["article_count"],
+            gdelt_top_headline=gdelt_data.get("top_headline", "")
         )

@@ -29,6 +29,12 @@ class DataDTO:
     # ── [확장] 정우의 확률론적 분포(평균, 표준편차) 연산을 위한 누적 데이터 윈도우 ──
     history_demand: list[float]     # 스트레스 오염이 격리된 순수 과거 수요 이력 배열
     history_lead_time: list[float]  # 스트레스 오염이 격리된 순수 과거 리드타임 이력 배열
+    
+    # ── [확장] GDELT DOC 2.0 API 공급망/지정학적 리스크 감성 분석 지표 ──
+    gdelt_risk_level: str = "Low"
+    gdelt_average_tone: float = 0.0
+    gdelt_article_count: int = 0
+    gdelt_top_headline: str = ""
 
 
 @dataclass
