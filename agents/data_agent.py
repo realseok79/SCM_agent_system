@@ -14,7 +14,7 @@ import pandas as pd
 from datetime import datetime
 from pytrends.request import TrendReq
 
-from dto.schemas import DataDTO
+from dto.schemas import DataDTO, DemandDTO, RiskCategory, AlertLevel, OperationMode
 from utils.logger import get_logger
 from agents.config import PATHS, NETWORK
 from agents.data_config import build_weight_map, get_demand_impact_score
@@ -71,6 +71,7 @@ class DataAgent:
         # 통계적 기준선 및 Analysis Agent 전달용 시계열 Buffer 초기화
         self._demand_history: list[float] = []
         self._lt_history: list[float] = []
+        self.last_processed_day: int = -1  # [추가] 중복 누적 방지용 일자 추적 필드
         self._gdelt_tracker = GlobalIssueTracker()
         
         # Pytrends 설정 및 키워드 가중치 로드
@@ -184,9 +185,11 @@ class DataAgent:
         signals = self._fetch_external_signals(day)
         base_lead_time = signals["lead_time_days"]
 
-        # 4. 최종 확정된 전처리 데이터를 히스토리에 누적 (과거 창 생성)
-        self._demand_history.append(float(clean_demand))
-        self._lt_history.append(float(base_lead_time))
+        # 4. 최종 확정된 전처리 데이터를 히스토리에 누적 (과거 창 생성 - 중복 방지 가드레일 적용)
+        if day > getattr(self, "last_processed_day", -1):
+            self._demand_history.append(float(clean_demand))
+            self._lt_history.append(float(base_lead_time))
+            self.last_processed_day = day
 
         # 5. 스트레스 테스트 시나리오 가중치 연산
         final_demand = clean_demand
@@ -203,7 +206,22 @@ class DataAgent:
         # 7. Google Trends 수요 리스크 스캔
         trend_signal = self._fetch_trend_signal()
 
-        # 8. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달
+        # [신규] 표준 DemandDTO 전처리 포맷팅 동작 확인 및 검증
+        try:
+            demand_dto = self.preprocess_to_demand_dto(
+                day=day,
+                current_stock=current_stock,
+                clean_demand=final_demand,
+                final_lead_time=final_lead_time,
+                trend_composite_score=trend_signal["composite_score"],
+                raw_record=raw
+            )
+            logger.info(f"✨ [Preprocess] 표준 DemandDTO 변환 성공 (Item: {demand_dto.item_name}) | "
+                        f"실효수요: {demand_dto.effective_demand:.1f} | ROP: {demand_dto.reorder_point:.1f} | EOQ: {demand_dto.eoq:.1f}")
+        except Exception as e:
+            logger.error(f"❌ 표준 DemandDTO 전처리 변환 실패: {e}")
+
+        # 8. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달 (하위 호환성 유지)
         return DataDTO(
             timestamp=datetime.now().isoformat(),
             day=day,
@@ -221,3 +239,152 @@ class DataAgent:
             trend_composite_score=trend_signal["composite_score"],
             trend_matched_count=trend_signal["matched_count"]
         )
+
+    def preprocess_to_demand_dto(
+        self,
+        day: int,
+        current_stock: float,
+        clean_demand: float,
+        final_lead_time: float,
+        trend_composite_score: float,
+        raw_record: dict
+    ) -> DemandDTO:
+        """
+        [전처리 파트] 가져온 날것의 데이터를 표준 DemandDTO로 포맷팅합니다.
+        보완책 1, 2, 3이 내재된 확률론적 재고/수요 최적화 파라미터가 자동으로 계산되는 마스터 DTO입니다.
+        """
+        # 1. 수요 평균 및 표준편차 산출 (안정적인 통계 산출을 위해 최소 2일 이상의 데이터가 있을 때 계산)
+        avg_demand = float(np.mean(self._demand_history)) if self._demand_history else clean_demand
+        std_demand = float(np.std(self._demand_history)) if len(self._demand_history) > 1 else (clean_demand * 0.25)
+        
+        # 2. 리드타임 표준편차 산출
+        std_lt = float(np.std(self._lt_history)) if len(self._lt_history) > 1 else 1.5
+        
+        # 3. 비용 정보 파싱
+        holding_cost_per_unit = float(raw_record.get("holding_cost_per_unit", 2.0))
+        stockout_cost = float(raw_record.get("stockout_cost_per_unit", 15.0))
+        holding_cost_rate = 0.2
+        # holding_cost = unit_cost * holding_cost_rate => unit_cost = holding_cost / holding_cost_rate
+        unit_cost = holding_cost_per_unit / holding_cost_rate if holding_cost_rate > 0 else 10.0
+
+        # 4. 리스크 카테고리 동적 매핑
+        risk_cat = RiskCategory.UNCLASSIFIED
+        if abs(raw_record.get("weather_index", 1.0) - 1.0) > 0.5:
+            risk_cat = RiskCategory.WEATHER_AND_CLIMATE
+        elif abs(raw_record.get("macro_trend", 1.0) - 1.0) > 0.5:
+            risk_cat = RiskCategory.MACRO_ECONOMY
+        else:
+            risk_cat = RiskCategory.LOGISTICS_AND_TRADE
+
+        # 5. 표준 DemandDTO 생성 (원시 레코드에서 SKU 정보를 동적으로 추출하되 안전하게 폴백 설정)
+        return DemandDTO(
+            item_id=str(raw_record.get("item_id", "ITEM-SCM-001")),
+            item_name=str(raw_record.get("item_name", "가상 SCM 반도체 부품")),
+            current_stock=float(current_stock),
+            daily_demand_avg=round(avg_demand, 2),
+            daily_demand_std=round(std_demand, 2),
+            lead_time_days=round(final_lead_time, 2),
+            lead_time_std=round(std_lt, 2),
+            unit_cost=round(unit_cost, 2),
+            holding_cost_rate=holding_cost_rate,
+            stockout_cost=stockout_cost,
+            risk_category=risk_cat,
+            service_level=0.95,
+            demand_impact=float(trend_composite_score),
+            mode=OperationMode.SIMULATION,
+            timestamp=datetime.now().isoformat(),
+            source_file=DATA_PATH
+        )
+
+    def collect_demand_dto(self, day: int, current_date, stress_event, current_stock: float) -> DemandDTO:
+        """
+        날것의 수집 및 보정 데이터를 바탕으로 전처리하여 표준 DemandDTO를 직접 반환하는 엔트리포인트
+        """
+        stress_event = stress_event or {"is_stress": False}
+        idx = (day - 1) % len(self._db)
+        raw = self._db[idx]
+
+        # 1. 원시 데이터 추출
+        raw_demand = raw.get("daily_demand", raw.get("daily_sales")) 
+
+        # 2. 결측치 및 통계적 노이즈 보정
+        clean_demand = self._clip_outlier(self._fix_missing(raw_demand, "daily_demand"), "daily_demand")
+
+        # 3. 외부 신호 수집
+        signals = self._fetch_external_signals(day)
+        base_lead_time = signals["lead_time_days"]
+
+        # 4. 최종 확정된 전처리 데이터를 히스토리에 누적 (과거 창 생성 - 중복 방지 가드레일 적용)
+        if day > getattr(self, "last_processed_day", -1):
+            self._demand_history.append(float(clean_demand))
+            self._lt_history.append(float(base_lead_time))
+            self.last_processed_day = day
+
+        # 5. 스트레스 테스트 시나리오 가중치 연산
+        final_demand = clean_demand
+        final_lead_time = base_lead_time
+        
+        if stress_event.get("is_stress"):
+            final_demand *= stress_event.get("demand_multiplier", 1.0)
+            final_lead_time *= stress_event.get("lead_time_multiplier", 1.0)
+            logger.warning(f"⚠️ [{day}일차] 스트레스 주입 완료: 수요 {final_demand:.0f} / 조달 {final_lead_time:.1f}일")
+
+        # 6. Google Trends 수요 리스크 스캔
+        trend_signal = self._fetch_trend_signal()
+        trend_composite_score = trend_signal["composite_score"]
+
+        # 7. DemandDTO로 포맷팅 및 반환
+        return self.preprocess_to_demand_dto(
+            day=day,
+            current_stock=current_stock,
+            clean_demand=final_demand,
+            final_lead_time=final_lead_time,
+            trend_composite_score=trend_composite_score,
+            raw_record=raw
+        )
+
+    def parse_unstructured_input(self, text: str = None, file_df = None) -> dict:
+        """
+        [Phase 2 요구사항] 비정형 텍스트나 사용자 엑셀 파일을 전달받아
+        정형화된 품목명, 수량, 리스크 카테고리를 추출하는 엔드포인트.
+        (실제 서비스 시 OpenAI Structured Outputs 또는 경량 LLM API 연동부)
+        """
+        from dto.schemas import RiskCategory
+
+        # 1. 파일 업로드 형식(DataFrame) 처리인 경우
+        if file_df is not None:
+            try:
+                # 엑셀의 첫 행이나 특정 컬럼에서 데이터를 파싱하는 규칙 기반 폴백
+                item_name = str(file_df.iloc[0].get("품목명", file_df.iloc[0].get("item_name", "가상 SCM 반도체 부품")))
+                quantity = float(file_df.iloc[0].get("수량", file_df.iloc[0].get("quantity", 100.0)))
+                return {"item_name": item_name, "quantity": quantity, "category": RiskCategory.TECH_AND_SEMICONDUCTOR}
+            except Exception:
+                return {"item_name": "엑셀 업로드 부품", "quantity": 150.0, "category": RiskCategory.LOGISTICS_AND_TRADE}
+
+        # 2. 자연어 텍스트 메모장 파싱인 경우 (정규식 및 텍스트 쪼가리 맥락 파악 폴백)
+        if text:
+            import re
+            cleaned = text.replace(" ", "")
+            
+            # 수량 추출 정규식 (예: 250개, 250ea, 250 개 등)
+            qty_match = re.search(r'(\d+)(개|ea|톤|box|가지)', text.lower())
+            quantity = float(qty_match.group(1)) if qty_match else 100.0
+            
+            # 품목명 유추
+            item_name = "가상 SCM 반度體 부품"
+            category = RiskCategory.LOGISTICS_AND_TRADE
+            
+            if "반도체" in text or "칩" in text or "반도체" in cleaned:
+                item_name = "고성능 반도체 칩(MCU)"
+                category = RiskCategory.TECH_AND_SEMICONDUCTOR
+            elif "마스크" in text or "의료" in text:
+                item_name = "보건용 마스크"
+                category = RiskCategory.WEATHER_AND_CLIMATE
+                
+            return {
+                "item_name": item_name,
+                "quantity": quantity,
+                "category": category
+            }
+            
+        return {"item_name": "미분류 아이템", "quantity": 0.0, "category": RiskCategory.UNCLASSIFIED}
