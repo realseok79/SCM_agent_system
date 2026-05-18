@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pandas
+streamlit
+python-dotenv
+pytest
+pytest-cov
+pydantic
+yfinance
+fredapi
+pytrends
+scipy
