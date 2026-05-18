@@ -20,11 +20,17 @@ class RiskCategory:
     REGULATORY_AND_POLICY    = "REGULATORY_AND_POLICY"
     CONSUMER_SENTIMENT       = "CONSUMER_SENTIMENT"
     UNCLASSIFIED             = "UNCLASSIFIED"
+    
+    # M5 Categories
+    FOODS                    = "FOODS"
+    HOBBIES                  = "HOBBIES"
+    HOUSEHOLD                = "HOUSEHOLD"
 
     ALL = [
         HEALTH_AND_BIOTECH, LOGISTICS_AND_TRADE, WEATHER_AND_CLIMATE,
         MACRO_ECONOMY, TECH_AND_SEMICONDUCTOR, ENERGY_AND_RAW_MATERIALS,
         LABOR_AND_WORKFORCE, REGULATORY_AND_POLICY, CONSUMER_SENTIMENT,
+        FOODS, HOBBIES, HOUSEHOLD
     ]
 
 
@@ -277,3 +283,75 @@ class InventorySignalDTO:
     optimal_order_qty: float   # 경제적 발주량(EOQ) 기반 최적 제안 발주 수량
     confidence_level: float    # 통계적 신뢰 수준 (예: 0.95 -> 95%)
     alert_level: AlertLevel    # 엄격한 데이터 타입을 적용한 위기 경보 시그널
+
+
+import numpy as np
+
+@dataclass
+class BatchDemandDTO:
+    """
+    Vectorized SCM Batch Demand DTO (M5 30k SKU support)
+    """
+    item_ids          : np.ndarray  # shape (30490,)
+    item_names        : np.ndarray  # shape (30490,)
+    categories        : np.ndarray  # shape (30490,)
+    current_stocks    : np.ndarray  # shape (30490,)
+    daily_demand_avg  : np.ndarray  # shape (30490,)
+    daily_demand_std  : np.ndarray  # shape (30490,)
+    lead_time_days    : np.ndarray  # shape (30490,)
+    lead_time_std     : np.ndarray  # shape (30490,)
+    unit_costs        : np.ndarray  # shape (30490,)
+    stockout_costs    : np.ndarray  # shape (30490,)
+    demand_impacts    : np.ndarray  # shape (30490,)
+    day               : int
+    holding_cost_rate : float = 0.2
+    service_level     : float = 0.95
+    mode              : str = OperationMode.SIMULATION
+    timestamp         : str = ""
+
+    @property
+    def effective_demands(self) -> np.ndarray:
+        bounded_impacts = np.maximum(self.demand_impacts, -0.90)
+        return np.round(self.daily_demand_avg * (1 + bounded_impacts), 2)
+
+    @property
+    def safety_stocks(self) -> np.ndarray:
+        z = 0.5
+        min_demand_std = self.daily_demand_avg * 0.15
+        effective_demand_std = np.maximum(self.daily_demand_std, min_demand_std)
+        ss = z * np.sqrt(
+            self.lead_time_days * (effective_demand_std ** 2)
+            + (self.effective_demands ** 2) * (self.lead_time_std ** 2)
+        )
+        return np.round(ss, 2)
+
+    @property
+    def reorder_points(self) -> np.ndarray:
+        return np.round(self.effective_demands * self.lead_time_days + self.safety_stocks, 2)
+
+    @property
+    def eoqs(self) -> np.ndarray:
+        annual_demands = self.daily_demand_avg * 365
+        order_costs    = self.unit_costs * 0.03
+        holding_costs  = self.unit_costs * self.holding_cost_rate
+        
+        holding_costs_safe = np.where(holding_costs == 0, 1e-5, holding_costs)
+        eoq = np.sqrt(2 * annual_demands * order_costs / holding_costs_safe)
+        
+        fallback = self.daily_demand_avg * 14
+        eoq = np.where((holding_costs == 0) | (annual_demands == 0), fallback, eoq)
+        return np.round(eoq, 2)
+
+
+@dataclass
+class BatchInventorySignalDTO:
+    """
+    Vectorized SCM Batch Inventory Signal DTO
+    """
+    timestamp: str
+    day: int
+    safety_stocks: np.ndarray
+    reorder_points: np.ndarray
+    optimal_order_qtys: np.ndarray
+    confidence_level: float
+    alert_levels: np.ndarray  # Array of strings

@@ -12,7 +12,8 @@ import os
 from datetime import datetime
 from collections import deque
 
-from dto.schemas import InventorySignalDTO, AlertLevel
+from dto.schemas import InventorySignalDTO, AlertLevel, BatchInventorySignalDTO
+import numpy as np
 from utils.logger import get_logger
 from agents.config import PATHS, GUARDRAILS
 
@@ -38,6 +39,10 @@ class ActionAgent:
     def __init__(self):
         self._order_history_30d: deque[float] = deque(maxlen=30)
         self._full_history: list[dict] = self._load_history()
+
+        # [고도화] 30,490개 SKU 전체의 30일 발주 이력 행렬 초기화
+        self._batch_history_30d = np.zeros((30, 30490))
+        self._batch_history_count = 0
 
         logger.info("ActionAgent 초기화 완료")
         logger.info(f"  제어 가드레일 (절대) : Max {ABSOLUTE_MAX_CAPACITY} units")
@@ -247,3 +252,49 @@ class ActionAgent:
             
         logger.info(f"✨ [Zero-Friction] 발주서 발행 완료 -> {list_path} ({item_name}: {quantity}개)")
         return {"status": "APPROVED", "order_id": order_item["order_id"], "data": order_item}
+
+    def execute_batch(self, signal: BatchInventorySignalDTO) -> dict:
+        """
+        [고도화] 30,490개 SKU 전체의 발주량 검증 및 이중 가드레일 처리를 NumPy 행렬 연산으로 일괄 수행.
+        """
+        optimal_order_qtys = signal.optimal_order_qtys
+        
+        # 1. 절대 상한선 가드레일 (ABSOLUTE_MAX_CAPACITY)
+        absolute_blocked = optimal_order_qtys > ABSOLUTE_MAX_CAPACITY
+        
+        # 2. 상대 상한선 가드레일 (30일 이동 평균의 3배)
+        status = np.full(len(optimal_order_qtys), "APPROVED", dtype=object)
+        relative_blocked = np.zeros(len(optimal_order_qtys), dtype=bool)
+        
+        if self._batch_history_count >= 5:
+            avg_30d = np.mean(self._batch_history_30d[:min(30, self._batch_history_count)], axis=0)
+            relative_ceilings = avg_30d * MAX_ORDER_CEILING_RATIO
+            # 30일 평균이 0이거나 매우 낮을 때 replenishment가 차단되지 않도록 안전 가드 설정
+            relative_ceilings = np.maximum(relative_ceilings, 150.0)
+            # 역사적 주문 이력이 있고(avg_30d > 0) 한계를 넘을 때만 차단
+            relative_blocked = (optimal_order_qtys > relative_ceilings) & (optimal_order_qtys > 0) & (avg_30d > 0)
+            
+        status[relative_blocked] = "BLOCKED"
+        status[absolute_blocked] = "BLOCKED"
+        
+        approved_qtys = np.where(status == "APPROVED", optimal_order_qtys, 0.0)
+        
+        # 3. 30일 발주 이력 업데이트 (APPROVED된 발주량만 누적 저장)
+        # Shift history row-wise
+        if self._batch_history_count < 30:
+            self._batch_history_30d[self._batch_history_count] = approved_qtys
+            self._batch_history_count += 1
+        else:
+            self._batch_history_30d = np.roll(self._batch_history_30d, -1, axis=0)
+            self._batch_history_30d[-1] = approved_qtys
+            
+        # 차단되거나 승인된 건수 계산
+        approved_count = int(np.sum(status == "APPROVED"))
+        blocked_count = int(np.sum(status == "BLOCKED"))
+        
+        return {
+            "status": status,
+            "approved_qty": approved_qtys,
+            "approved_count": approved_count,
+            "blocked_count": blocked_count
+        }

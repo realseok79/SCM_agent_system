@@ -277,67 +277,130 @@ if "action_agent" not in st.session_state:
 
 def render_simulation_dashboard():
     """
-    SIMULATION_MODE: 기존 레거시 시스템 vs AI 동적 최적화 시스템의 과잉 재고 비용 비교 대시보드
+    SIMULATION_MODE: M5 월마트 30,490개 SKU 전체 백테스팅 및 리스크 분석 대시보드
     """
-    st.markdown(f'<div class="hdr"><div><div class="hdr-t">시뮬레이션 모드: AI 동적 발주 도입 효과 검증</div><div class="hdr-s">과잉 재고 및 안전재고 유지 비용 절감 시뮬레이션 (100일 압축 시나리오)</div></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="hdr"><div><div class="hdr-t">M5 백테스팅: 월마트 30,490개 SKU 전체 AI 도입 효과 검증</div><div class="hdr-s">글로벌 공급망 외란 및 기상 이변 하에서 고정 SCM 정책 대비 AI dynamic 최적화 실증분석</div></div></div>', unsafe_allow_html=True)
     
-    st.markdown("### 100일 압축 시뮬레이션 및 스트레스 테스트 효과 비교")
-    st.info("**[비용 절감 효과]** 본 시뮬레이션은 기존의 고정 ROP 발주 방식과 AI 동적 ROP/안전재고 자동 계산 엔진 도입 시의 비용 격차를 정밀 시각화합니다.")
+    # 결과 파일 로드
+    results_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "outputs", "m5_backtest_results.json"))
     
-    # 100일 더미 데이터 생성
-    days = list(range(1, 101))
+    if not os.path.exists(results_path):
+        st.warning("백테스팅 결과 파일이 존재하지 않습니다. 시뮬레이션을 백그라운드에서 실시간 재생성 중입니다...")
+        import subprocess
+        subprocess.run(["PYTHONPATH=.", "venv/bin/python", "simulator/m5_backtester.py"], cwd=os.path.dirname(os.path.dirname(results_path)), shell=True)
+        
+    if not os.path.exists(results_path):
+        st.error("백테스팅 엔진 실행 실패. 대시보드를 시뮬레이션 모드로 임시 작동합니다.")
+        return
+        
+    with open(results_path, "r", encoding="utf-8") as f:
+        res = json.load(f)
+        
+    summary = res["summary"]
+    top_10 = res["top_10_risk_skus"]
+    daily_stats = res["daily_stats"]
     
-    # 레거시: 고정 안전재고(500) 및 고정 ROP 기반의 보수적 발주로 인한 높은 재고 유지비
-    # AI: 수요/조달 지연 변동성에 빠르게 적응하여 30~45% 비용 감축
-    legacy_cost = []
-    ai_cost = []
+    # KPI 렌더링
+    st.markdown(f'''<div class="kg">
+    <div class="kc"><div class="kl">기존 누적 물류비 (Legacy)</div><div class="kv r">₩{summary['total_legacy_cost']:,.0f}</div><div class="ku">고정 ROP / SS / EOQ</div></div>
+    <div class="kc"><div class="kl">AI 도입 누적 물류비 (AI SCM)</div><div class="kv g">₩{summary['total_ai_cost']:,.0f}</div><div class="ku">동적 재고 최적화 및 이중 가드레일</div></div>
+    <div class="kc"><div class="kl">총 절감 비용 (Savings)</div><div class="kv b">₩{summary['savings']:,.0f}</div><div class="ku">누적 절감액</div></div>
+    <div class="kc"><div class="kl">비용 절감률 (Savings %)</div><div class="kv y">{summary['savings_pct']:.1f}%</div><div class="ku">SCM 비용 절감 성과</div></div>
+    <div class="kc"><div class="kl">평균 품절율 개선</div><div class="kv b">{summary['average_legacy_stockout_rate']:.2f}% ➔ {summary['average_ai_stockout_rate']:.2f}%</div><div class="ku">품절 위험 대폭 차단</div></div>
+    </div>''', unsafe_allow_html=True)
     
-    np.random.seed(42)
-    current_legacy = 150000.0
-    current_ai = 150000.0
+    st.markdown("### 공급망 스트레스 테스트 (100일 압축 시뮬레이션 분석)")
     
-    for d in days:
-        # 노이즈 및 위기 상황에 따른 변동 추가
-        noise = np.random.normal(0, 10000)
-        stress_multiplier = 1.0
-        if 30 <= d <= 35:
-            stress_multiplier = 2.5 # 수요 폭증 구간
-        elif 60 <= d <= 81:
-            stress_multiplier = 3.0 # 조달 지연 구간
-        elif 85 <= d <= 90:
-            stress_multiplier = 3.5 # 복합 위기 구간
+    # 카테고리 필터링 추가
+    categories = ["전체 품목 일괄"] + list(np.unique([k for d in daily_stats for k in d.get("categories", {}).keys()]))
+    selected_cat = st.selectbox("품목 카테고리 필터링 (Walmart Category)", options=categories)
+    
+    days = [d["day"] for d in daily_stats]
+    
+    legacy_cum = []
+    ai_cum = []
+    legacy_stockout = []
+    ai_stockout = []
+    
+    curr_leg = 0.0
+    curr_ai = 0.0
+    
+    for d in daily_stats:
+        if selected_cat == "전체 품목 일괄":
+            leg_cost = d["legacy"]["total_cost"]
+            ai_cost = d["ai"]["total_cost"]
+            leg_so = d["legacy"]["stockout_rate"]
+            ai_so = d["ai"]["stockout_rate"]
+        else:
+            cat_data = d.get("categories", {}).get(selected_cat, {"legacy": {"total_cost": 0, "stockout_rate": 0}, "ai": {"total_cost": 0, "stockout_rate": 0}})
+            leg_cost = cat_data["legacy"]["total_cost"]
+            ai_cost = cat_data["ai"]["total_cost"]
+            leg_so = cat_data["legacy"]["stockout_rate"]
+            ai_so = cat_data["ai"]["stockout_rate"]
             
-        legacy_cost_increment = (1500 + noise * 0.1) * stress_multiplier
-        ai_cost_increment = (900 + noise * 0.05) * (stress_multiplier * 0.6) # AI는 40% 비용 감축
+        curr_leg += leg_cost
+        curr_ai += ai_cost
         
-        current_legacy += legacy_cost_increment
-        current_ai += ai_cost_increment
-        
-        legacy_cost.append(round(current_legacy, 2))
-        ai_cost.append(round(current_ai, 2))
+        legacy_cum.append(curr_leg)
+        ai_cum.append(curr_ai)
+        legacy_stockout.append(leg_so)
+        ai_stockout.append(ai_so)
         
     df_cost = pd.DataFrame({
         "Day": days,
-        "기존 SCM 비용 (Legacy)": legacy_cost,
-        "AI 동적 SCM 비용 (AI Dynamic)": ai_cost
+        "기존 SCM 누적 비용 (Legacy)": legacy_cum,
+        "AI Dynamic SCM 누적 비용": ai_cum
     }).set_index("Day")
     
-    # KPI 렌더링
-    total_legacy = legacy_cost[-1]
-    total_ai = ai_cost[-1]
-    savings = total_legacy - total_ai
-    savings_pct = (savings / total_legacy) * 100
+    df_stockout = pd.DataFrame({
+        "Day": days,
+        "기존 SCM 평균 품절율 (%)": legacy_stockout,
+        "AI Dynamic SCM 평균 품절율 (%)": ai_stockout
+    }).set_index("Day")
     
-    st.markdown(f'''<div class="kg">
-    <div class="kc"><div class="kl">기존 누적 유지비</div><div class="kv r">₩{total_legacy:,.0f}</div><div class="ku">고정 안전재고/ROP 방식</div></div>
-    <div class="kc"><div class="kl">AI 도입 누적 유지비</div><div class="kv g">₩{total_ai:,.0f}</div><div class="ku">동적 재고 최적화 엔진</div></div>
-    <div class="kc"><div class="kl">총 절감 비용</div><div class="kv b">₩{savings:,.0f}</div><div class="ku">누적 절감액</div></div>
-    <div class="kc"><div class="kl">비용 절감률</div><div class="kv y">{savings_pct:.1f}%</div><div class="ku">효율 개선률</div></div>
+    r1, r2 = st.columns(2)
+    with r1:
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>누적 물류 총비용 추이 (Holding + Stockout)</div>', unsafe_allow_html=True)
+        st.line_chart(df_cost)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with r2:
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>일별 평균 품절 빈도율 추이 (%)</div>', unsafe_allow_html=True)
+        st.line_chart(df_stockout)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    # Top 10 Risk SKU 분석 테이블
+    st.markdown("### Top 10 SCM Risk SKU 분석 (품절 취약 품목 집중 개선 실증)")
+    st.info("Legacy SCM 체제 하에서 가장 빈번하게 품절이 발생하여 공급망 리스크를 유발했던 상위 10개 SKU를 추적하고, AI dynamic ROP/SS 최적화 도입 시의 개선율을 시각화합니다.")
+    
+    rows = "".join([
+        f'<tr>'
+        f'<td style="color:#8ab4f8;font-family:monospace;font-size:11px">{o["item_id"]}</td>'
+        f'<td style="font-size:11px">{o["item_name"]}</td>'
+        f'<td><span class="kb ok" style="font-size:10px">{o["category"]}</span></td>'
+        f'<td style="font-family:monospace;font-size:11px">{o["store_id"]}</td>'
+        f'<td style="color:#f28b82;font-weight:bold;text-align:center">{o["legacy_stockout_days"]}일</td>'
+        f'<td style="color:#81c995;font-weight:bold;text-align:center">{o["ai_stockout_days"]}일</td>'
+        f'<td style="color:#8ab4f8;font-weight:bold;text-align:right">+{o["improvement_pct"]:.1f}% 개선</td>'
+        f'</tr>'
+        for o in top_10
+    ])
+    
+    st.markdown(f'''<div class="gt">
+        <table>
+            <thead>
+                <tr>
+                    <th>아이템 ID</th>
+                    <th>아이템 명</th>
+                    <th>카테고리</th>
+                    <th>Walmart 매장</th>
+                    <th style="text-align:center">Legacy 품절 일수</th>
+                    <th style="text-align:center">AI SCM 품절 일수</th>
+                    <th style="text-align:right">품절 예방 개선율</th>
+                </tr>
+            </thead>
+            <tbody>{rows}</tbody>
+        </table>
     </div>''', unsafe_allow_html=True)
-    
-    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>누적 과잉 재고 및 물류 비용 비교</div>', unsafe_allow_html=True)
-    st.line_chart(df_cost)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     st.sidebar.title("SCM 관제 시스템 메뉴")
