@@ -221,7 +221,12 @@ class DataAgent:
         except Exception as e:
             logger.error(f"❌ 표준 DemandDTO 전처리 변환 실패: {e}")
 
-        # 8. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달 (하위 호환성 유지)
+        # 8. 비용 파라미터 동적 파싱 (TC 목적함수용, SKU별 상이)
+        holding_cost_per_unit = float(raw.get("holding_cost_per_unit", 0.5))
+        stockout_cost_per_unit = float(raw.get("stockout_cost_per_unit", 10.0))
+        order_fixed_cost = float(raw.get("order_fixed_cost", 200.0))
+
+        # 9. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달 (하위 호환성 유지)
         return DataDTO(
             timestamp=datetime.now().isoformat(),
             day=day,
@@ -237,7 +242,10 @@ class DataAgent:
             gdelt_article_count=gdelt_data["article_count"],
             gdelt_top_headline=gdelt_data.get("top_headline", ""),
             trend_composite_score=trend_signal["composite_score"],
-            trend_matched_count=trend_signal["matched_count"]
+            trend_matched_count=trend_signal["matched_count"],
+            unit_holding_cost=holding_cost_per_unit,
+            stockout_penalty=stockout_cost_per_unit,
+            order_fixed_cost=order_fixed_cost
         )
 
     def preprocess_to_demand_dto(

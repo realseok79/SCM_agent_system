@@ -9,3 +9,4 @@ pydantic
 yfinance
 fredapi
 pytrends
+scipy

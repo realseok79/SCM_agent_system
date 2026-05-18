@@ -269,6 +269,12 @@ class DataDTO:
     trend_composite_score: float = 0.0
     trend_matched_count: int = 0
 
+    # ── [확장] TC 목적함수 최소화용 비용 파라미터 (SKU별 동적 주입) ──
+    # Analysis Agent가 하드코딩 없이 품목별 상이한 비용 구조를 반영할 수 있도록 확장
+    unit_holding_cost: float = 0.5      # 단위 재고 보유 비용 (h, holding cost per unit per day)
+    stockout_penalty: float = 10.0      # 단위 품절 패널티 비용 (p, penalty per unit)
+    order_fixed_cost: float = 200.0     # 1회 발주 고정 비용 (K, ordering cost)
+
 
 @dataclass
 class InventorySignalDTO:
