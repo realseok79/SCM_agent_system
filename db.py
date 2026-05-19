@@ -89,6 +89,27 @@ def init_db():
         """)
         
         conn.commit()
+        
+        # ── [안정화 배포 보완] 기본 데이터 자동 시드 (Seeding) ──
+        cursor.execute("SELECT COUNT(*) FROM regions")
+        if cursor.fetchone()[0] == 0:
+            default_regions = [
+                ("서울특별시", "KR-11", "수도권 메인 물류 거점"),
+                ("부산광역시", "KR-26", "영남권 물류 허브 및 항만 거점"),
+                ("제주특별자치도", "KR-49", "제주도 물류 허브")
+            ]
+            cursor.executemany(
+                "INSERT INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
+                default_regions
+            )
+            
+        cursor.execute("SELECT COUNT(*) FROM users")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "INSERT INTO users (username, email, role) VALUES (?, ?, ?)",
+                ("admin", "admin@sigma-enterprise.com", "ADMIN")
+            )
+        conn.commit()
 
 if __name__ == "__main__":
     init_db()

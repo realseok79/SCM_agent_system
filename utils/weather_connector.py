@@ -61,10 +61,29 @@ REGION_WEATHER_META = {
 }
 
 def load_wmo_master() -> pd.DataFrame:
-    """WMO 마스터 파일 로드"""
+    """WMO 마스터 파일 로드 및 부재 시 자동 생성"""
     csv_path = PATHS["WMO_CSV"]
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"WMO 마스터 파일이 존재하지 않습니다: {csv_path}")
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    
+    if not os.path.exists(csv_path) or os.path.getsize(csv_path) < 100:
+        # 주요 거점의 기상청 WMO 코드셋 매핑 데이터 자동 구성
+        world_data = {
+            "country": [
+                "South Korea", "South Korea", "South Korea", "South Korea",
+                "South Korea", "South Korea", "South Korea", "South Korea", "South Korea"
+            ],
+            "station_name": [
+                "Ulsan", "Busan", "Seoul", "Daegu",
+                "Incheon", "Daejeon", "Gwangju", "Suwon", "Jeju"
+            ],
+            "station_id": [152, 159, 108, 143, 112, 133, 156, 119, 184],
+            "latitude": [35.5389, 35.1017, 37.5665, 35.8714, 37.4563, 36.3504, 35.1595, 37.2636, 33.4996],
+            "longitude": [129.3114, 129.0300, 126.9780, 128.6014, 126.7052, 127.3845, 126.8526, 127.0286, 126.5312]
+        }
+        df = pd.DataFrame(world_data)
+        df.to_csv(csv_path, index=False)
+        return df
+        
     return pd.read_csv(csv_path)
 
 def get_seeded_mock_weather(region_code: str, date_str: str) -> Dict:
