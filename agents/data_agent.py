@@ -29,7 +29,7 @@ class GlobalIssueTracker:
         # GDELT DOC 2.0 API 엔드포인트 (API Key 불필요)
         self.base_url = "https://api.gdeltproject.org/api/v2/doc/doc"
 
-    def fetch_supply_chain_risk_tone(self, target_country="Taiwan", issue_keyword="strike OR delay OR block OR supply chain"):
+    def fetch_supply_chain_risk_tone(self, target_country="Taiwan", issue_keyword="strike OR delay OR block OR supply chain OR protest OR union OR trucker OR shutdown"):
         query = f'"{target_country}" AND ({issue_keyword})'
         params = {
             "query": query,
@@ -39,7 +39,7 @@ class GlobalIssueTracker:
             "timespan": "3d"
         }
         try:
-            response = requests.get(self.base_url, params=params, timeout=5)
+            response = requests.get(self.base_url, params=params, timeout=1.5)
             if response.status_code == 200 and len(response.text) > 0:
                 data = response.json()
                 if "articles" not in data or not data["articles"]:

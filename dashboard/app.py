@@ -1,10 +1,31 @@
-import json, os, sys, pandas as pd, numpy as np, matplotlib.pyplot as plt
+import json, os, sys, pandas as pd, numpy as np, matplotlib.pyplot as plt, concurrent.futures, time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 from matplotlib import rc
 import streamlit as st
+import importlib
+
+import utils.macro_connector
+import utils.scoring_engine
+importlib.reload(utils.macro_connector)
+importlib.reload(utils.scoring_engine)
+
+# 코드 변경이 감지되어 리로드될 때 기존 캐시를 안전하게 1회 비워줍니다.
+try:
+    st.cache_data.clear()
+except Exception:
+    pass
+
 from utils.macro_connector import GlobalMacroEngine
+from utils.scoring_engine import LogisticsRiskScorer
+
+# 전역 스레드 풀 생성 (Streamlit의 스크립트 재실행 시 블로킹 shutdown을 방지하기 위함)
+GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+# 백그라운드 스레드용 수동 캐시 (Streamlit의 st.cache_data가 스레드 내부에서 오작동하는 것을 방지)
+MANUAL_CACHE = {}
+
 st.set_page_config(page_title="SCM Agent Dashboard", page_icon="SCM", layout="wide", initial_sidebar_state="expanded")
 plt.rcParams["axes.unicode_minus"] = False
 for f in ["AppleGothic","NanumGothic","Malgun Gothic"]:
@@ -275,6 +296,46 @@ if "data_agent" not in st.session_state:
 if "action_agent" not in st.session_state:
     st.session_state["action_agent"] = ActionAgent()
 
+def get_cached_macro_data(country):
+    key = f"macro_{country}"
+    if key in MANUAL_CACHE and (time.time() - MANUAL_CACHE[key]['time']) < 1800:
+        return MANUAL_CACHE[key]['data']
+    macro_engine = GlobalMacroEngine()
+    data = macro_engine.fetch_unified_macro_vector(country)
+    MANUAL_CACHE[key] = {'data': data, 'time': time.time()}
+    return data
+
+def get_cached_weather(station_id, lat, lon):
+    key = f"weather_{station_id}"
+    if key in MANUAL_CACHE and (time.time() - MANUAL_CACHE[key]['time']) < 1800:
+        return MANUAL_CACHE[key]['data']
+    data = get_live_weather_by_station(station_id, lat, lon)
+    MANUAL_CACHE[key] = {'data': data, 'time': time.time()}
+    return data
+
+def get_cached_gdelt(country):
+    key = f"gdelt_{country}"
+    if key in MANUAL_CACHE and (time.time() - MANUAL_CACHE[key]['time']) < 1800:
+        return MANUAL_CACHE[key]['data']
+    from agents.data_agent import GlobalIssueTracker
+    tracker = GlobalIssueTracker()
+    data = tracker.fetch_supply_chain_risk_tone(target_country=country)
+    MANUAL_CACHE[key] = {'data': data, 'time': time.time()}
+    return data
+
+def get_cached_trends(country):
+    key = f"trends_{country}"
+    if key in MANUAL_CACHE and (time.time() - MANUAL_CACHE[key]['time']) < 1800:
+        return MANUAL_CACHE[key]['data']
+    from agents.data_agent import DataAgent
+    try:
+        agent = DataAgent()
+        data = agent._fetch_trend_signal()
+    except Exception:
+        data = {"composite_score": 0.0, "matched_count": 0}
+    MANUAL_CACHE[key] = {'data': data, 'time': time.time()}
+    return data
+
 def render_simulation_dashboard():
     """
     SIMULATION_MODE: M5 월마트 30,490개 SKU 전체 백테스팅 및 리스크 분석 대시보드
@@ -497,36 +558,114 @@ def main():
         st.info(f"**[SCM 제어 시스템]** 관제 타겟: **{matched_station['station_name']} ({selected_country})** | 위치: `{matched_station['latitude']} / {matched_station['longitude']}`")
         
         st.markdown("---")
-        st.markdown(f"### {selected_country} 중심 공급망 리스크 벡터")
         
-        macro_engine = GlobalMacroEngine()
-        data_vector = macro_engine.fetch_unified_macro_vector(selected_country)
+        # 1~3. 외부 실시간 데이터 수집 (백그라운드 워커 파일에서 읽기)
+        from utils.state_manager import load_lkv
+        lkv_state = load_lkv()
+        country_data = lkv_state.get(selected_country, {})
         
-        # 1계층 지표
-        st.subheader("1계층: 실물 경기 및 금융 변동성 벡터")
-        m_col1, m_col2, m_col3 = st.columns(3)
-        fx_label = f"대미 환율 ({data_vector['currency_code']}/USD)" if data_vector['fx_ticker'] else "기준 통화 (USD)"
-        m_col1.metric(label=fx_label, value=f"{data_vector['fx_value']}", delta=f"{data_vector['fx_change_pct']}%")
+        raw_weather = country_data.get("weather", "[Fallback] 대체 기상 정보")
+        data_vector = country_data.get("macro", {"oil_change_pct": 0.0, "inflation_rate": 2.0, "index_change_pct": 0.0, "fx_change_pct": 0.0})
+        gdelt_info = country_data.get("gdelt", {"average_tone": 0.0, "risk_level": "Low", "top_headline": "Fallback Mode"})
+        trend_info = country_data.get("trends", {"composite_score": 0.0, "matched_count": 0})
         
-        idx_label = f"시장 지수 ({data_vector['index_ticker']})" if data_vector['index_ticker'] else "시장 지수"
-        idx_val = f"{data_vector['index_value']} pt" if data_vector['index_value'] > 0 else "데이터 준비 중"
-        m_col2.metric(label=idx_label, value=idx_val, delta=f"{data_vector['index_change_pct']}%")
-        m_col3.metric(label="WTI 국제 유가", value=f"${data_vector['oil_price']}", delta=f"{data_vector['oil_change_pct']}%", delta_color="inverse")
-            
-        # 2계층 지표
-        st.subheader("2계층: 통화 정책 및 내수 인플레이션 벡터")
+        # 데이터가 아예 없는 경우 (첫 실행 등) fallback_mode 처리
+        fallback_mode = "macro" not in country_data or "gdelt" not in country_data
+        
+        if fallback_mode:
+            st.warning("⚠️ **[FALLBACK_MODE_ACTIVATED]** 백그라운드 수집 데이터가 없어 기본값으로 연산된 점수입니다.")
+        else:
+            st.success(f"ℹ️ **[데이터 신선도]** 마지막 동기화 시점: `{country_data.get('timestamp', 'N/A')}`")
+
+        gdelt_tone = gdelt_info.get("average_tone", 0.0)
+        gdelt_risk_level = gdelt_info.get("risk_level", "Low")
+        gdelt_headline = gdelt_info.get("top_headline", "")
+        social_score = trend_info.get("composite_score", 0.0)
+                
+        # 4. 실시간 물류 리스크 점수화 엔진 실행
+        scorer = LogisticsRiskScorer()
+        scm_metrics = scorer.score_all(
+            data_vector=data_vector,
+            weather_text=raw_weather,
+            trend_score=social_score,
+            gdelt_tone=gdelt_tone
+        )
+        
+        # 5. SCM 리스크 파급 효과 예상 화면 구성 (Raw Data 및 원문 텍스트는 전면 은닉)
+        st.markdown(f"### 🚚 {selected_country} 중심 글로벌 공급망 리스크 파급 예상")
+        st.info("💡 **[공급망 분석 안내]** 본 관제탑은 원시 금융 지표(환율/유가/지수) 및 기상청 원문 데이터를 제거하고, SCM 물류 파급력을 수학적으로 정밀 계량화한 실질 예상치만을 노출합니다.")
+        
+        # 1계층: 종합 리스크 스코어 & 조달 지연일
+        r_col1, r_col2 = st.columns(2)
+        
+        # SCM 종합 리스크 스코어 (로지스틱 시그모이드 모델링)
+        r_score = scm_metrics["integrated_risk_score"]
+        r_level = "심각 (CRITICAL)" if r_score >= 70 else ("경고 (WARNING)" if r_score >= 40 else "정상 (NORMAL)")
+        r_color = "#f28b82" if r_score >= 70 else ("#fdd663" if r_score >= 40 else "#81c995")
+        
+        r_col1.markdown(f"""
+        <div class="kc" style="border-left: 5px solid {r_color}; padding: 15px;">
+            <div class="kl">SCM 종합 리스크 스코어 (Sigmoid Mapping)</div>
+            <div class="kv" style="color: {r_color}; font-size: 32px; font-weight: bold;">{r_score} / 100</div>
+            <div class="ku" style="font-size: 11px; margin-top: 5px;">현재 리스크 수준: <b>{r_level}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 예상 조달 지연일 (LT delay)
+        lt_delay = scm_metrics["lead_time_delay"]
+        lt_color = "#f28b82" if lt_delay >= 2.0 else ("#fdd663" if lt_delay >= 0.5 else "#81c995")
+        r_col2.markdown(f"""
+        <div class="kc" style="border-left: 5px solid {lt_color}; padding: 15px;">
+            <div class="kl">예상 조달 지연일 (Lead Time Delay)</div>
+            <div class="kv" style="color: {lt_color}; font-size: 32px; font-weight: bold;">+{lt_delay} Days</div>
+            <div class="ku" style="font-size: 11px; margin-top: 5px;">실시간 수집된 날씨 점수: <b>{scm_metrics['weather_score']:.1f}점</b> 반영됨</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        
+        # 2계층: 운임 변동률, 수요 충격 지수, 사회적 리스크
         e_col1, e_col2, e_col3 = st.columns(3)
         
-        rate_display = f"{data_vector['interest_rate']}%" if data_vector['interest_rate'] is not None else "N/A (미제공)"
-        e_col1.metric(label=f"{selected_country} 고유 기준금리", value=rate_display, delta="FRED 고유국가 직접 동기화")
+        # 예상 물류 운임 변동률 (Cf)
+        cf = scm_metrics["freight_rate_change"]
+        cf_color = "#f28b82" if cf >= 15.0 else ("#fdd663" if cf >= 5.0 else "#81c995")
+        cf_sign = "+" if cf >= 0 else ""
+        e_col1.markdown(f"""
+        <div class="kc" style="border-left: 5px solid {cf_color};">
+            <div class="kl">예상 물류 운임 변동률 (Freight Impact)</div>
+            <div class="kv" style="color: {cf_color};">{cf_sign}{cf:.2f}%</div>
+            <div class="ku">WTI 유가 변동률 및 CPI 인플레이션율 연동</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        inf_display = f"{data_vector['inflation_rate']:.2f}%" if data_vector['inflation_rate'] is not None else "N/A (미제공)"
-        e_col2.metric(label=f"{selected_country} 소비자물가상승률(YoY)", value=inf_display, delta="실질 변동률 정제 완료")
+        # 소비자 수요 충격 지수 (Ds)
+        ds = scm_metrics["demand_shock_index"]
+        ds_color = "#f28b82" if ds <= -10.0 else ("#fdd663" if ds <= -2.0 else "#81c995")
+        ds_sign = "+" if ds >= 0 else ""
+        e_col2.markdown(f"""
+        <div class="kc" style="border-left: 5px solid {ds_color};">
+            <div class="kl">소비자 수요 충격 예상치 (Demand Shock)</div>
+            <div class="kv" style="color: {ds_color};">{ds_sign}{ds:.2f}%</div>
+            <div class="ku">주가지수/환율 로그 탄력성 모델 반영</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        e_col3.metric(label="종합 위험 스코어", value=f"{data_vector['integrated_risk_score']} / 100")
-            
-        st.markdown("---")
-        st.markdown("### 기상청 GTS 실시간 수집 RAW 전문 스트림")
-        st.code(get_live_weather_by_station(matched_station['station_id'], matched_station['latitude'], matched_station['longitude']), language="text")
+        # 사회적/지정학적 리스크 점수
+        social_risk = scm_metrics["social_score"]
+        social_color = "#f28b82" if social_risk >= 50.0 else ("#fdd663" if social_risk >= 20.0 else "#81c995")
+        e_col3.markdown(f"""
+        <div class="kc" style="border-left: 5px solid {social_color};">
+            <div class="kl">사회적/지정학적 리스크 (Social Risk)</div>
+            <div class="kv" style="color: {social_color};">{social_risk:.1f} 점</div>
+            <div class="ku">GDELT ({gdelt_risk_level}) 및 구글 트렌드 실시간 융합</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        
+        # GDELT 미디어 헤드라인 요약 노출
+        if gdelt_headline and gdelt_headline != "No critical event":
+            st.warning(f"🚨 **[지정학적 리스크 헤드라인 실시간 감지]** {gdelt_headline} (GDELT Sentiment Tone: {gdelt_tone})")
 
 if __name__=="__main__": main()

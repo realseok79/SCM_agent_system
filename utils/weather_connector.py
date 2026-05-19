@@ -31,7 +31,7 @@ def get_live_weather_by_station(station_id, lat=None, lon=None):
     kma_text = ""
     if api_key:
         try:
-            response = requests.get(url, params=params, timeout=7)
+            response = requests.get(url, params=params, timeout=1.5)
             if response.status_code == 200:
                 if "AUTH_ERROR" in response.text or "ERROR" in response.text:
                     kma_text = f"⚠️ 기상청 API 에러: {response.text.strip()}"
@@ -48,7 +48,7 @@ def get_live_weather_by_station(station_id, lat=None, lon=None):
         if ow_key:
             ow_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={ow_key}&units=metric"
             try:
-                res = requests.get(ow_url, timeout=7)
+                res = requests.get(ow_url, timeout=1.5)
                 if res.status_code == 200:
                     data = res.json()
                     desc = data.get("weather", [{}])[0].get("description", "Unknown")
@@ -59,6 +59,6 @@ def get_live_weather_by_station(station_id, lat=None, lon=None):
             except:
                 pass
 
-    if kma_text:
-        return kma_text
-    return "⚠️ 기상 데이터 지연 및 대체 데이터 수신 실패"
+    # 모든 API 수신 실패 시 에러 문자열을 넘기면 점수가 0점으로 과소평가될 수 있으므로
+    # 명시적으로 None을 반환하여 대시보드에서 fallback_mode가 켜지도록 유도합니다.
+    return None
