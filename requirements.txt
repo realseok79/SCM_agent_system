@@ -1,31 +1,13 @@
-# ── Core Framework ──
 fastapi
 uvicorn
-streamlit
-streamlit-autorefresh
-
-# ── Data & Science ──
 pandas
-numpy
-matplotlib
-scipy
-openpyxl
-
-# ── External APIs & Network ──
-requests
+streamlit
+python-dotenv
+pytest
+pytest-cov
+pydantic
 yfinance
 fredapi
 pytrends
-
-# ── Configuration & Utilities ──
-python-dotenv
-pydantic
-pyyaml
+scipy
 apscheduler
-
-# ── AI (Optional — fallback 동작 보장) ──
-openai
-
-# ── Testing ──
-pytest
-pytest-cov

@@ -7,12 +7,6 @@ from unittest.mock import MagicMock
 
 # ── Streamlit 의존성 모킹 (pytest Import 시 크래시 방지) ──
 mock_st = MagicMock()
-def mock_decorator(*args, **kwargs):
-    def decorator(func):
-        return func
-    return decorator
-mock_st.cache_data = mock_decorator
-mock_st.cache_resource = mock_decorator
 sys.modules["streamlit"] = mock_st
 sys.modules["streamlit_autorefresh"] = MagicMock()
 
@@ -27,6 +21,7 @@ def setup_test_db(monkeypatch):
     테스트용 격리 DB 구성 및 app.py의 DB_PATH 패치
     """
     monkeypatch.setattr("db.DB_PATH", TEST_DB_PATH)
+    monkeypatch.setattr("dashboard.app.DB_PATH", TEST_DB_PATH)
     
     if os.path.exists(TEST_DB_PATH):
         try:
@@ -39,9 +34,6 @@ def setup_test_db(monkeypatch):
             pass
             
     init_db()
-    
-    # dashboard.app을 미리가져와서 모듈 로드 시점의 init_db() 호출이 완료되게 한 후 삭제를 진행합니다.
-    import dashboard.app
     
     # regions 테이블 기본 데이터 초기화(동적 테스트를 위해 삭제)
     conn = get_db_connection()
