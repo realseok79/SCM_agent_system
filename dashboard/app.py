@@ -10,8 +10,11 @@ from matplotlib import rc
 import streamlit as st
 import importlib
 
-from db import get_db_connection
+from db import get_db_connection, init_db
 from models import standardize_region
+
+# 첫 실행 시 DB 테이블 자동 생성 및 기본 시드 데이터 삽입 (멱등성 보장: CREATE TABLE IF NOT EXISTS)
+init_db()
 from utils.data_parser import parse_and_route_file
 from utils.weather_connector import get_weather_for_region
 
@@ -28,6 +31,8 @@ except Exception:
 
 from utils.macro_connector import GlobalMacroEngine
 from utils.scoring_engine import LogisticsRiskScorer
+from agents.llm_diagnoser import generate_action_plan
+
 
 # 전역 스레드 풀 생성 (Streamlit의 스크립트 재실행 시 블로킹 shutdown을 방지하기 위함)
 GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
@@ -253,6 +258,92 @@ def render_home_dashboard():
 <div class="kc"><div class="kl">발주 경고 SKU</div><div class="kv {"r" if summary["alert_count"] > 0 else "g"}">{summary["alert_count"]} 품목</div><div class="ku">평균 대비 30% 이하 고갈 품목</div><div class="kb {"w" if summary["alert_count"] > 0 else "ok"}">{"경고" if summary["alert_count"] > 0 else "정상"}</div></div>
 <div class="kc"><div class="kl">기상 이변 거점</div><div class="kv {"y" if summary["weather_alerts"] > 0 else "g"}">{summary["weather_alerts"]} 개소</div><div class="ku">강수/온도 경보 발령</div><div class="kb {"w" if summary["weather_alerts"] > 0 else "ok"}">{"기상 악화" if summary["weather_alerts"] > 0 else "정상"}</div></div>
 </div>''', unsafe_allow_html=True)
+
+    # SCM 운영 및 발주 체크리스트 추가
+    st.markdown("### 📋 오늘의 SCM 운영 및 발주 체크리스트")
+    chk_col1, chk_col2 = st.columns([1.8, 1.2])
+    
+    with chk_col1:
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>오늘의 자동 발주 권고 목록</div>', unsafe_allow_html=True)
+        if "order_approved_seoul" not in st.session_state:
+            st.session_state["order_approved_seoul"] = False
+            
+        if not st.session_state["order_approved_seoul"]:
+            st.markdown("""
+            <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; margin-bottom: 10px;">
+                <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [품절 임박 경고] 서울점 마스크 재고 부족</div>
+                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
+                    현재 서울점 <b>마스크</b> 품목 재고가 <b>3일 뒤 품절 예정</b>입니다.<br/>
+                    AI 권장량 <b>500개</b>의 자동 발주를 진행할까요?
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            import json
+            order_draft = {
+                "region_code": "KR-11",
+                "region_name": "서울특별시",
+                "product_name": "마스크",
+                "quantity": 500,
+                "order_type": "AUTOMATIC_REORDER",
+                "recommended_reason": "3일 뒤 품절 예상에 따른 안전재고 확보",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            draft_str = json.dumps(order_draft, ensure_ascii=False, indent=2)
+            
+            def approve_seoul_order():
+                st.session_state["order_approved_seoul"] = True
+                
+            st.download_button(
+                label="📥 자동 발주 승인 및 다운로드",
+                data=draft_str,
+                file_name="order_draft_seoul_mask.json",
+                mime="application/json",
+                on_click=approve_seoul_order,
+                key="btn_download_seoul"
+            )
+        else:
+            st.markdown("""
+            <div class="ep en" style="border-left-color: #81c995; padding: 12px; margin-bottom: 10px;">
+                <div class="et" style="color: #81c995; font-weight: bold; font-size: 13px;">✅ [발주 완료] 서울점 마스크 발주서 생성 완료</div>
+                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
+                    서울점 <b>마스크 500개</b>에 대한 발주 요청이 승인되어 <b>진행 중</b> 상태로 전환되었습니다.<br/>
+                    발주서 초안 다운로드가 브라우저에서 실행되었습니다.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🔄 발주 요청 초기화 (테스트용)", key="reset_seoul"):
+                st.session_state["order_approved_seoul"] = False
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    with chk_col2:
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>실시간 물류 건강 지표</div>', unsafe_allow_html=True)
+        total_regions = summary["region_count"]
+        weather_alerts = summary["weather_alerts"]
+        healthy_regions = total_regions - weather_alerts
+        
+        if weather_alerts > 0:
+            st.markdown(f"""
+            <div class="ep ec" style="border-left-color: #fdd663; padding: 12px; min-height: 110px;">
+                <div class="et" style="color: #fdd663; font-weight: bold; font-size: 13px;">🟡 국지적 기상 이변 감지</div>
+                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
+                    현재 총 <b>{total_regions}곳</b> 중 <b>{healthy_regions}곳</b>의 경로가 정상입니다.<br/>
+                    날씨 경보가 발령된 <b>{weather_alerts}곳</b>은 조달 지연을 대비해야 합니다.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="ep en" style="border-left-color: #81c995; padding: 12px; min-height: 110px;">
+                <div class="et" style="color: #81c995; font-weight: bold; font-size: 13px;">🟢 전 지점 운송 경로 정상</div>
+                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
+                    현재 모든 물류 거점(총 <b>{total_regions}곳</b>)의 환경이 양호합니다.<br/>
+                    배송 지연 요인이 식별되지 않았습니다.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     r2a, r2b = st.columns([1.5, 1])
     
@@ -840,346 +931,29 @@ def main():
  
         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
         
-        # 2계층: 추상적인 수학 연산 모델 점수를 Expander 안으로 격리
-        with st.expander("📊 SCM 의사결정 수학적 리스크 분석 엔진 상세 산출 근거"):
-            e_col1, e_col2, e_col3 = st.columns(3)
-            
-            # SCM 종합 리스크 스코어
-            r_score = scm_metrics["integrated_risk_score"]
-            r_level = "심각 (CRITICAL)" if r_score >= 70 else ("경고 (WARNING)" if r_score >= 40 else "정상 (NORMAL)")
-            r_color = "#f28b82" if r_score >= 70 else ("#fdd663" if r_score >= 40 else "#81c995")
-            e_col1.markdown(f"""
-            <div class="kc" style="border-left: 5px solid {r_color}; padding: 10px; background: #2b2c2f;">
-                <div class="kl" style="font-size: 11px;">SCM 종합 리스크 스코어</div>
-                <div class="kv" style="color: {r_color}; font-size: 20px; font-weight: bold;">{r_score} / 100</div>
-                <div class="ku" style="font-size: 9px; margin-top: 3px;">지수 형태 시그모이드 매핑</div>
+        # AI 에이전트 처방 (Action Plan) 카드 추가
+        action_plan_msg = generate_action_plan(
+            region_name=selected_station_name,
+            product_name="종합 품목",
+            delay_days=lt_delay,
+            demand_shock=ds,
+            action_code=scm_metrics["decision_action_code"],
+            base_message=scm_metrics["decision_message"]
+        )
+        
+        st.markdown(f"""
+        <div class="ep en" style="border-left-color: #8ab4f8; margin-top: 15px; padding: 15px; background: #202124; border-radius: 4px;">
+            <div class="et" style="color: #8ab4f8; font-weight: bold; font-size: 13px;">🤖 AI 에이전트 처방 (Action Plan)</div>
+            <div class="eb" style="color: #e8eaed; font-size: 12px; margin-top: 8px; line-height: 1.5;">
+                {action_plan_msg}
             </div>
-            """, unsafe_allow_html=True)
-            
-            # 지정학적 사회적 리스크
-            social_risk = scm_metrics["social_score"]
-            social_color = "#f28b82" if social_risk >= 50.0 else ("#fdd663" if social_risk >= 20.0 else "#81c995")
-            e_col2.markdown(f"""
-            <div class="kc" style="border-left: 5px solid {social_color}; padding: 10px; background: #2b2c2f;">
-                <div class="kl" style="font-size: 11px;">지정학적/사회 트렌드 리스크</div>
-                <div class="kv" style="color: {social_color}; font-size: 20px; font-weight: bold;">{social_risk:.1f} 점</div>
-                <div class="ku" style="font-size: 9px; margin-top: 3px;">GDELT ({gdelt_risk_level}) 및 구글 트렌드 융합</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 실시간 날씨 파싱 점수
-            w_score = scm_metrics["weather_score"]
-            w_color = "#f28b82" if w_score >= 8.0 else ("#fdd663" if w_score >= 4.0 else "#81c995")
-            e_col3.markdown(f"""
-            <div class="kc" style="border-left: 5px solid {w_color}; padding: 10px; background: #2b2c2f;">
-                <div class="kl" style="font-size: 11px;">실시간 날씨 파싱 스코어</div>
-                <div class="kv" style="color: {w_color}; font-size: 20px; font-weight: bold;">{w_score:.1f} 점</div>
-                <div class="ku" style="font-size: 9px; margin-top: 3px;">허브 날씨 자연어 분석 점수</div>
-            </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
  
         # GDELT 미디어 헤드라인 요약 노출
         if gdelt_headline and gdelt_headline != "No critical event":
             st.warning(f"🚨 **[지정학적 리스크 헤드라인 실시간 감지]** {gdelt_headline} (GDELT Sentiment Tone: {gdelt_tone})")
 
-def get_db_active_countries():
-    """
-    현재 DB에 등록된 지점들의 국가 코드를 매핑하여 반환합니다.
-    """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT region_code FROM regions")
-        codes = [row["region_code"] for row in cursor.fetchall()]
-    except Exception:
-        codes = []
-    finally:
-        conn.close()
-        
-    countries = set()
-    for code in codes:
-        code_upper = str(code).upper()
-        if code_upper.startswith("KR-"):
-            countries.add("South Korea")
-        elif code_upper.startswith("US-"):
-            countries.add("United States")
-        elif code_upper.startswith("CN-"):
-            countries.add("China")
-        elif code_upper.startswith("JP-"):
-            countries.add("Japan")
-        elif code_upper.startswith("GB-"):
-            countries.add("United Kingdom")
-            
-    return sorted(list(countries))
-
-def main():
-    st.sidebar.title("SCM 관제 시스템 메뉴")
-    menu = st.sidebar.radio("이동", ["메인 대시보드", "지역별 SCM 관제 센터", "등록 지점 리스크 관제"])
-    
-    if menu == "메인 대시보드":
-        # 1. 제로 마찰 자율 형식 업로드 엔진 & 가드레일 UI
-        st.markdown(f'<div class="hdr"><div><div class="hdr-t">실시간 자율 AI 데이터 업로드 및 발주 제어</div><div class="hdr-s">비정형 텍스트 및 파일을 분석하여 안전 가드레일을 거쳐 즉시 발주를 실행합니다.</div></div></div>', unsafe_allow_html=True)
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("자연어 텍스트 입력")
-            memo = st.text_area("발주 요청 사항을 자유롭게 적어주세요. (예: 반도체 칩 250개 입고 부탁드립니다.)", height=100)
-        with c2:
-            st.subheader("파일 드롭존 (CSV / Excel)")
-            uploaded_file = st.file_uploader("발주서 파일을 업로드하세요.", type=["csv", "xlsx"])
-            
-        if st.button("AI 데이터 분석 및 정형화", key="btn_ai_parse"):
-            parsed_res = None
-            if uploaded_file is not None:
-                try:
-                    if uploaded_file.name.endswith(".csv"):
-                        df = pd.read_csv(uploaded_file)
-                    else:
-                        df = pd.read_excel(uploaded_file)
-                    parsed_res = st.session_state["data_agent"].parse_unstructured_input(file_df=df)
-                except Exception as e:
-                    st.error(f"파일을 읽는 도중 오류가 발생했습니다: {e}")
-            elif memo.strip():
-                parsed_res = st.session_state["data_agent"].parse_unstructured_input(text=memo)
-            else:
-                st.warning("자연어 텍스트를 입력하거나 파일을 업로드해 주세요.")
-                
-            if parsed_res:
-                st.session_state["parsed_result"] = parsed_res
-                st.success("AI 비정형 데이터 분석 완료!")
-                
-        # 분석 결과가 세션에 있으면 승인 UI 노출
-        if "parsed_result" in st.session_state:
-            res = st.session_state["parsed_result"]
-            st.markdown(f"""
-            <div class="kc" style="border-left: 5px solid #8ab4f8; margin: 10px 0;">
-                <h4 style="margin: 0 0 5px 0; color: #8ab4f8;">AI 분석 제안</h4>
-                <p style="margin: 3px 0; font-size: 13px;"><b>품목명:</b> {res['item_name']} | <b>수량:</b> {res['quantity']:,} 개 | <b>카테고리:</b> {res['category']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 가드레일 임시 검증용
-            is_safe, guardrail_reason = st.session_state["action_agent"].validate_guardrails(res['item_name'], res['quantity'])
-            if not is_safe:
-                st.error(f"가드레일 위반 경고: {guardrail_reason}")
-            else:
-                st.success("비즈니스 가드레일 통과! 안전한 발주 요청입니다.")
-                if st.button("최종 발주 승인 및 집행", key="btn_confirm_order"):
-                    exec_res = st.session_state["action_agent"].execute_and_publish(
-                        res['item_name'], res['quantity'], res['category']
-                    )
-                    if exec_res["status"] == "APPROVED":
-                        st.balloons()
-                        st.success(f"발주서 발행 및 집행 성공! (발주 ID: {exec_res['order_id']})")
-                        # 세션 초기화
-                        del st.session_state["parsed_result"]
-                    else:
-                        st.error(f"발주 실패: {exec_res['reason']}")
-        
-        # 실제 DB 기반 통합 메인 대시보드 렌더링
-        st.markdown("---")
-        render_home_dashboard()
-        
-    elif menu == "지역별 SCM 관제 센터":
-        render_regional_dashboard()
-        
-    elif menu == "등록 지점 리스크 관제":
-        st.markdown(f'<div class="hdr"><div><div class="hdr-t">등록 지점 리스크 관제탑</div><div class="hdr-s">Registered Regions Risk Control Tower &nbsp;·&nbsp; 등록 지점 소속 국가의 실시간 거동 및 물류 영향 분석</div></div></div>', unsafe_allow_html=True)
-        
-        db_countries = get_db_active_countries()
-        wmo_master_df = load_wmo_master()
-        
-        col_sel1, col_sel2 = st.columns(2)
-        
-        # 만약 DB에 등록된 국가가 없다면 South Korea를 기본으로 보여주며 안내함
-        if not db_countries:
-            st.warning("💡 **[안내]** 현재 데이터베이스에 등록된 활성 해외 지점이 없습니다. 기본 관제 국가(South Korea)로 작동합니다.")
-            display_countries = ["South Korea"]
-        else:
-            display_countries = db_countries
-            
-        selected_country = col_sel1.selectbox("관제 대상 국가 (등록 지점 기반)", options=display_countries)
-        
-        # 선택한 국가가 실제 DB 등록 국가 목록에 속하는지 체크
-        is_registered = (selected_country in db_countries) if db_countries else True
-        
-        filtered_stations = wmo_master_df[wmo_master_df['country'] == selected_country]
-        selected_station_name = col_sel2.selectbox(f"{selected_country} 내 허브 거점", options=filtered_stations['station_name'])
-        
-        matched_station = filtered_stations[filtered_stations['station_name'] == selected_station_name].iloc[0]
-        
-        st.info(f"**[SCM 제어 시스템]** 관제 타겟 거점: **{matched_station['station_name']} ({selected_country})** | 위치: `{matched_station['latitude']} / {matched_station['longitude']}`")
-        
-        if not is_registered:
-            st.markdown(f"""
-            <div class="ep ew" style="margin-top: 15px;">
-                <div class="et">⚠️ 미등록 국가 관제 알림</div>
-                <div class="eb"><b>{selected_country}</b>에 속한 창고나 지점이 현재 데이터베이스에 등록되지 않았습니다.<br/>
-                지역별 SCM 관제 센터 메뉴에서 해당 국가의 지점(지역 코드: 예: KR-11, US-CA 등)을 먼저 등록하고 재고를 업로드하셔야 실시간 비즈니스 맞춤형 의사결정이 지원됩니다.</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("---")
-        
-        # 1~3. 외부 실시간 데이터 수집 (백그라운드 워커 파일에서 읽기)
-        from utils.state_manager import load_lkv
-        lkv_state = load_lkv()
-        country_data = lkv_state.get(selected_country, {})
-        
-        raw_weather = country_data.get("weather", "[Fallback] 대체 기상 정보")
-        data_vector = country_data.get("macro", {"oil_change_pct": 0.0, "inflation_rate": 2.0, "index_change_pct": 0.0, "fx_change_pct": 0.0})
-        gdelt_info = country_data.get("gdelt", {"average_tone": 0.0, "risk_level": "Low", "top_headline": "Fallback Mode"})
-        trend_info = country_data.get("trends", {"composite_score": 0.0, "matched_count": 0})
-        
-        # 데이터가 아예 없는 경우 (첫 실행 등) fallback_mode 처리
-        fallback_mode = "macro" not in country_data or "gdelt" not in country_data
-        
-        if fallback_mode:
-            st.warning("⚠️ **[FALLBACK_MODE_ACTIVATED]** 백그라운드 수집 데이터가 없어 기본값으로 연산된 점수입니다.")
-        else:
-            st.success(f"ℹ️ **[데이터 신선도]** 마지막 동기화 시점: `{country_data.get('timestamp', 'N/A')}`")
- 
-        gdelt_tone = gdelt_info.get("average_tone", 0.0)
-        gdelt_risk_level = gdelt_info.get("risk_level", "Low")
-        gdelt_headline = gdelt_info.get("top_headline", "")
-        social_score = trend_info.get("composite_score", 0.0)
-                
-        # 4. 실시간 물류 리스크 점수화 엔진 실행
-        scorer = LogisticsRiskScorer()
-        scm_metrics = scorer.score_all(
-            data_vector=data_vector,
-            weather_text=raw_weather,
-            trend_score=social_score,
-            gdelt_tone=gdelt_tone
-        )
-        
-        # 5. SCM 리스크 파급 효과 예상 화면 구성
-        st.markdown(f"### 🚚 {selected_country} 중심 공급망 리스크 파급 예상 분석")
-        st.info("💡 **[직관적 공급망 분석]** 본 관제탑은 추상적인 리스크 점수를 걷어내고, SCM 물류에 직접적으로 미치는 파급 효과(조달 지연, 수요 충격, 운임 폭등)를 고대비 카드로 시각화하여 즉시 조치를 취할 수 있도록 지원합니다.")
-        
-        # 1계층: 3대 핵심 물류 파급 지표 (대형 고대비 카드 구조)
-        c_col1, c_col2, c_col3 = st.columns(3)
-        
-        # 1) 예상 조달 지연일 (LT Delay)
-        lt_delay = scm_metrics["lead_time_delay"]
-        lt_color = "#f28b82" if lt_delay >= 2.0 else ("#fdd663" if lt_delay >= 0.5 else "#81c995")
-        c_col1.markdown(f"""
-        <div class="kc" style="border-left: 5px solid {lt_color}; padding: 15px; background: #202124; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-                <div class="kl" style="font-size: 13px; color: #9aa0a6;">📦 예상 조달 지연일 (Lead Time Delay)</div>
-                <div class="kv" style="color: {lt_color}; font-size: 32px; font-weight: bold; margin-top: 8px;">+{lt_delay:.1f} 일</div>
-            </div>
-            <div style="font-size: 11px; color: #e8eaed; line-height: 1.4; margin-top: 10px; border-top: 1px solid #3c4043; padding-top: 6px;">
-                {scm_metrics["delay_comment"]}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 2) 소비자 수요 충격 예상치 (Demand Shock)
-        ds = scm_metrics["demand_shock_index"]
-        ds_color = "#f28b82" if ds <= -10.0 else ("#fdd663" if ds <= -2.0 else "#81c995")
-        ds_sign = "+" if ds >= 0 else ""
-        c_col2.markdown(f"""
-        <div class="kc" style="border-left: 5px solid {ds_color}; padding: 15px; background: #202124; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-                <div class="kl" style="font-size: 13px; color: #9aa0a6;">📉 소비자 수요 충격 (Demand Shock)</div>
-                <div class="kv" style="color: {ds_color}; font-size: 32px; font-weight: bold; margin-top: 8px;">{ds_sign}{ds:.1f}%</div>
-            </div>
-            <div style="font-size: 11px; color: #e8eaed; line-height: 1.4; margin-top: 10px; border-top: 1px solid #3c4043; padding-top: 6px;">
-                {scm_metrics["demand_comment"]}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 3) 예상 물류 운임 변동률 (Freight Rate Change)
-        cf = scm_metrics["freight_rate_change"]
-        cf_color = "#f28b82" if cf >= 15.0 else ("#fdd663" if cf >= 5.0 else "#81c995")
-        cf_sign = "+" if cf >= 0 else ""
-        c_col3.markdown(f"""
-        <div class="kc" style="border-left: 5px solid {cf_color}; padding: 15px; background: #202124; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-                <div class="kl" style="font-size: 13px; color: #9aa0a6;">🚛 예상 물류 운임 변동률 (Freight Impact)</div>
-                <div class="kv" style="color: {cf_color}; font-size: 32px; font-weight: bold; margin-top: 8px;">{cf_sign}{cf:.1f}%</div>
-            </div>
-            <div style="font-size: 11px; color: #e8eaed; line-height: 1.4; margin-top: 10px; border-top: 1px solid #3c4043; padding-top: 6px;">
-                {scm_metrics["freight_comment"]}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
- 
-        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-        
-        # 2계층: 추상적인 수학 연산 모델 점수를 Expander 안으로 격리
-        with st.expander("📊 SCM 의사결정 수학적 리스크 분석 엔진 상세 산출 근거"):
-            e_col1, e_col2, e_col3 = st.columns(3)
-            
-            # SCM 종합 리스크 스코어
-            r_score = scm_metrics["integrated_risk_score"]
-            r_level = "심각 (CRITICAL)" if r_score >= 70 else ("경고 (WARNING)" if r_score >= 40 else "정상 (NORMAL)")
-            r_color = "#f28b82" if r_score >= 70 else ("#fdd663" if r_score >= 40 else "#81c995")
-            e_col1.markdown(f"""
-            <div class="kc" style="border-left: 5px solid {r_color}; padding: 10px; background: #2b2c2f;">
-                <div class="kl" style="font-size: 11px;">SCM 종합 리스크 스코어</div>
-                <div class="kv" style="color: {r_color}; font-size: 20px; font-weight: bold;">{r_score} / 100</div>
-                <div class="ku" style="font-size: 9px; margin-top: 3px;">지수 형태 시그모이드 매핑</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 지정학적 사회적 리스크
-            social_risk = scm_metrics["social_score"]
-            social_color = "#f28b82" if social_risk >= 50.0 else ("#fdd663" if social_risk >= 20.0 else "#81c995")
-            e_col2.markdown(f"""
-            <div class="kc" style="border-left: 5px solid {social_color}; padding: 10px; background: #2b2c2f;">
-                <div class="kl" style="font-size: 11px;">지정학적/사회 트렌드 리스크</div>
-                <div class="kv" style="color: {social_color}; font-size: 20px; font-weight: bold;">{social_risk:.1f} 점</div>
-                <div class="ku" style="font-size: 9px; margin-top: 3px;">GDELT ({gdelt_risk_level}) 및 구글 트렌드 융합</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 실시간 날씨 파싱 점수
-            w_score = scm_metrics["weather_score"]
-            w_color = "#f28b82" if w_score >= 8.0 else ("#fdd663" if w_score >= 4.0 else "#81c995")
-            e_col3.markdown(f"""
-            <div class="kc" style="border-left: 5px solid {w_color}; padding: 10px; background: #2b2c2f;">
-                <div class="kl" style="font-size: 11px;">실시간 날씨 파싱 스코어</div>
-                <div class="kv" style="color: {w_color}; font-size: 20px; font-weight: bold;">{w_score:.1f} 점</div>
-                <div class="ku" style="font-size: 9px; margin-top: 3px;">허브 날씨 자연어 분석 점수</div>
-            </div>
-            """, unsafe_allow_html=True)
- 
-        # GDELT 미디어 헤드라인 요약 노출
-        if gdelt_headline and gdelt_headline != "No critical event":
-            st.warning(f"🚨 **[지정학적 리스크 헤드라인 실시간 감지]** {gdelt_headline} (GDELT Sentiment Tone: {gdelt_tone})")
-
-
-        if fallback_mode:
-            pass
-        else:
-            pass
-
-        gdelt_tone = gdelt_info.get("average_tone", 0.0)
-        gdelt_risk_level = gdelt_info.get("risk_level", "Low")
-        gdelt_headline = gdelt_info.get("top_headline", "")
-        social_score = trend_info.get("composite_score", 0.0)
-                
-        # 4. 실시간 물류 리스크 점수화 엔진 실행
-        scorer = LogisticsRiskScorer()
-        scm_metrics = scorer.score_all(
-            data_vector=data_vector,
-            weather_text=raw_weather,
-            trend_score=social_score,
-            gdelt_tone=gdelt_tone
-        )
-        
-
-        
-
-        
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        
-        # GDELT 미디어 헤드라인 요약 노출
-        if False:
-            pass
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,7 @@
 import numpy as np
 import re
+import os
+import yaml
 from typing import Optional
 
 class LogisticsRiskScorer:
@@ -43,6 +45,43 @@ class LogisticsRiskScorer:
         self.w_delay = 5.0
         self.k = 0.015           # 감도 기울기를 완화하여 극단적 수치에서도 포화를 늦춤
         self.X_0 = 150.0         # 기하학적 분포 중심점을 우측으로 이동 (더 큰 충격에 반응)
+
+        # 5. YAML 의사결정 규칙 로딩 (Pro-tip 반영)
+        self.rules = []
+        rules_path = "config/decision_rules.yaml"
+        if os.path.exists(rules_path):
+            try:
+                with open(rules_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+                    self.rules = config.get("rules", [])
+            except Exception as e:
+                print(f"[SCM Risk Scorer] Error loading YAML decision rules: {e}")
+                
+        # YAML이 비어있거나 실패한 경우 Fallback 규칙 정의
+        if not self.rules:
+            self.rules = [
+                {
+                    "max_score": 100,
+                    "min_score": 81,
+                    "delay_days": 3.5,
+                    "action_code": "INCREASE_STOCK_20",
+                    "message": "물류 마비 위험이 감지되었습니다. 안전 재고를 평소 대비 **20% 긴급 상향 조정**할 것을 권장합니다."
+                },
+                {
+                    "max_score": 80,
+                    "min_score": 61,
+                    "delay_days": 1.5,
+                    "action_code": "PULL_FORWARD_1DAY",
+                    "message": "운송 경로 지연이 예상됩니다. 발주 타이밍을 평소보다 **1~2일 앞당길 것**을 권장합니다."
+                },
+                {
+                    "max_score": 60,
+                    "min_score": 0,
+                    "delay_days": 0.0,
+                    "action_code": "MAINTAIN",
+                    "message": "물류 흐름이 안정적입니다. 기존의 경제적 주문량(EOQ) 및 재오더포인트(ROP) 스케줄을 **그대로 유지**하십시오."
+                }
+            ]
 
     def parse_weather_score(self, weather_text: str) -> float:
         """
@@ -150,10 +189,20 @@ class LogisticsRiskScorer:
         r_scaled = 100.0 * (sig_X - sig_0) / (1.0 - sig_0)
         return round(float(max(0.0, r_scaled)), 1)
 
+    def get_decision(self, score: float) -> dict:
+        """
+        리스크 점수를 기반으로 YAML 설정 파일에 정의된 의사결정 규칙을 매칭하여 반환합니다.
+        """
+        for rule in self.rules:
+            if rule["min_score"] <= score <= rule["max_score"]:
+                return rule
+        return {
+            "delay_days": 0.0,
+            "action_code": "MAINTAIN",
+            "message": "물류 흐름이 안정적입니다. 기존의 경제적 주문량(EOQ) 및 재오더포인트(ROP) 스케줄을 **그대로 유지**하십시오."
+        }
+
     def score_all(self, data_vector: dict, weather_text: str, trend_score: float, gdelt_tone: float, prev_risk_score: Optional[float] = None) -> dict:
-        """
-        모든 입력을 조합하여 SCM 물류 리스크 리포트를 생성합니다.
-        """
         # 1. 날씨 점수 파싱
         weather_score = self.parse_weather_score(weather_text)
         
@@ -216,6 +265,9 @@ class LogisticsRiskScorer:
         else:
             demand_comment = "✅ 주요 거시경제 변수와 글로벌 트렌드 지수가 매우 안정적이어서 시장 수요 변동성이 궤도 내에서 관리되고 있습니다."
         
+        # YAML 매칭 의사결정 규칙 연동
+        decision = self.get_decision(r_total)
+        
         return {
             "freight_rate_change": round(cf, 2),
             "demand_shock_index": round(ds, 2),
@@ -225,5 +277,8 @@ class LogisticsRiskScorer:
             "social_score": round(social_score, 2),
             "freight_comment": freight_comment,
             "delay_comment": delay_comment,
-            "demand_comment": demand_comment
+            "demand_comment": demand_comment,
+            "decision_action_code": decision["action_code"],
+            "decision_message": decision["message"],
+            "decision_delay_days": decision["delay_days"]
         }

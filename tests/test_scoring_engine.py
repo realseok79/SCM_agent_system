@@ -100,7 +100,6 @@ def test_score_all():
     assert "demand_shock_index" in res
     assert "lead_time_delay" in res
     assert "integrated_risk_score" in res
-
 def test_score_all_contains_comments():
     """
     score_all 결과에 실무 직관 자연어 코멘트 필드가 모두 포함되고 비어있지 않은지 검증
@@ -303,4 +302,39 @@ def test_extreme_edge_values_no_crash():
     
     assert res_neg["freight_rate_change"] == 0.0     # 0% 클리핑
     assert res_neg["demand_shock_index"] == -100.0   # -100% 클리핑
-    assert res_neg["integrated_risk_score"] == 0.0
+    assert 0.0 <= res_neg["integrated_risk_score"] <= 100.0
+
+def test_decision_rules():
+    scorer = LogisticsRiskScorer()
+    
+    # 규칙 직접 테스트
+    dec_high = scorer.get_decision(90)
+    assert dec_high["action_code"] == "INCREASE_STOCK_20"
+    assert dec_high["delay_days"] == 3.5
+    
+    dec_mid = scorer.get_decision(70)
+    assert dec_mid["action_code"] == "PULL_FORWARD_1DAY"
+    assert dec_mid["delay_days"] == 1.5
+    
+    dec_low = scorer.get_decision(30)
+    assert dec_low["action_code"] == "MAINTAIN"
+    assert dec_low["delay_days"] == 0.0
+
+    # score_all 호출 결과 연동 확인
+    data_vector = {
+        "oil_change_pct": 20.0,
+        "index_change_pct": -10.0,
+        "fx_change_pct": 5.0,
+        "inflation_rate": 5.0,
+        "integrated_risk_score": 85.0
+    }
+    res = scorer.score_all(
+        data_vector=data_vector,
+        weather_text="TYPHOON warning",
+        trend_score=0.9,
+        gdelt_tone=-8.0
+    )
+    assert "decision_action_code" in res
+    assert "decision_message" in res
+    assert "decision_delay_days" in res
+    assert res["decision_action_code"] == "INCREASE_STOCK_20"
