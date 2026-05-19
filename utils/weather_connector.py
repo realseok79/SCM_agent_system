@@ -5,12 +5,12 @@ import requests
 import sqlite3
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 
 from db import get_db_connection
 from agents.config import PATHS
 
-def get_live_weather_by_station(station_id: int | str, lat: float | None = None, lon: float | None = None) -> str:
+def get_live_weather_by_station(station_id: Union[int, str], lat: Optional[float] = None, lon: Optional[float] = None) -> str:
     """
     기존 글로벌 공급망 관제탑 및 백그라운드 워커와의 하위 호환성을 위한 함수.
     주어진 WMO station_id 에 대해 기상청 GTS API를 호출하거나 적절한 fallback 날씨 데이터를 반환합니다.

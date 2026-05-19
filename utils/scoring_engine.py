@@ -1,5 +1,6 @@
 import numpy as np
 import re
+from typing import Optional
 
 class LogisticsRiskScorer:
     """
@@ -62,7 +63,7 @@ class LogisticsRiskScorer:
             return 2.5
         return 0.0
 
-    def calculate_freight_impact(self, oil_change_pct: float, inflation_rate: float | None, country_name: str = "Global") -> float:
+    def calculate_freight_impact(self, oil_change_pct: float, inflation_rate: Optional[float], country_name: str = "Global") -> float:
         """
         ① 예상 물류 운임 변동률 (Cf) 산식 계산 (비대칭 방향성 및 국가별 타겟 인플레이션 반영)
         경계선에서의 도약 불연속성(Jump Discontinuity)을 완전 제거한 연속 램프 함수(Continuous Ramp) 설계
@@ -149,7 +150,7 @@ class LogisticsRiskScorer:
         r_scaled = 100.0 * (sig_X - sig_0) / (1.0 - sig_0)
         return round(float(max(0.0, r_scaled)), 1)
 
-    def score_all(self, data_vector: dict, weather_text: str, trend_score: float, gdelt_tone: float, prev_risk_score: float | None = None) -> dict:
+    def score_all(self, data_vector: dict, weather_text: str, trend_score: float, gdelt_tone: float, prev_risk_score: Optional[float] = None) -> dict:
         """
         모든 입력을 조합하여 SCM 물류 리스크 리포트를 생성합니다.
         """
@@ -190,11 +191,39 @@ class LogisticsRiskScorer:
         
         r_total = self.calculate_integrated_risk_score(cf, ds, lt_delay)
         
+        # 5. 실무용 물류 직관 자연어 진단 코멘트 자동 생성
+        # 5-1. 운임 변동 코멘트
+        if cf >= 15.0:
+            freight_comment = f"🚨 WTI 유가 급등 및 국가별 인플레이션 타겟 초과 영향으로 예상 물류 운임이 {cf:.1f}% 대폭 상승할 우려가 있습니다."
+        elif cf >= 5.0:
+            freight_comment = f"⚠️ 인플레이션 압력과 유가 변동이 결합되어 물류 운임이 약 {cf:.1f}% 내외로 소폭 상승할 것으로 예상됩니다."
+        else:
+            freight_comment = "✅ 유가 및 소비자 물가가 타겟 인플레이션 범위 내로 안정 관리되어 운임 변동성이 최소화된 상태입니다."
+
+        # 5-2. 조달 지연 코멘트
+        if lt_delay >= 2.0:
+            delay_comment = f"🚨 거점 악천후 지수 상승({weather_score:.1f}점) 및 리스크 전이로 인해 조달 리드타임이 {lt_delay:.1f}일 급격히 지연될 예정입니다."
+        elif lt_delay >= 0.5:
+            delay_comment = f"⚠️ 국지적 기상 악화 또는 이전 리스크 누적으로 인해 조달 리드타임이 약 {lt_delay:.1f}일 가량 소폭 지연될 가능성이 있습니다."
+        else:
+            delay_comment = "✅ 거점 기상 상태가 양호하고 종합 리스크 전이 영향이 없어 조달 리드타임이 정상(지연 없음)입니다."
+
+        # 5-3. 수요 충격 코멘트
+        if ds <= -10.0:
+            demand_comment = f"🚨 금융 시장 지배 지수 하락 및 환율 변동성, 지정학적 우려가 융합되어 소비수요가 평소 대비 {ds:.1f}% 급감할 위험이 높습니다."
+        elif ds <= -2.0:
+            demand_comment = f"⚠️ 대외 환율 절하 및 부정적 뉴스 지표 영향으로 인해 소비자 수요가 약 {ds:.1f}% 가량 소폭 둔화될 것으로 진단됩니다."
+        else:
+            demand_comment = "✅ 주요 거시경제 변수와 글로벌 트렌드 지수가 매우 안정적이어서 시장 수요 변동성이 궤도 내에서 관리되고 있습니다."
+        
         return {
             "freight_rate_change": round(cf, 2),
             "demand_shock_index": round(ds, 2),
             "lead_time_delay": lt_delay,
             "integrated_risk_score": r_total,
             "weather_score": weather_score,
-            "social_score": round(social_score, 2)
+            "social_score": round(social_score, 2),
+            "freight_comment": freight_comment,
+            "delay_comment": delay_comment,
+            "demand_comment": demand_comment
         }

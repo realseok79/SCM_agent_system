@@ -5,16 +5,42 @@ from utils.weather_connector import get_live_weather_by_station
 from utils.macro_connector import GlobalMacroEngine
 from agents.data_agent import GlobalIssueTracker, DataAgent
 import pandas as pd
+from db import get_db_connection
 
-COUNTRIES = [
-    "South Korea", "United States", "China", "Japan", "United Kingdom", 
-    "Canada", "Australia", "India", "Brazil", "Mexico", 
-    "Taiwan", "Singapore", "Switzerland", "South Africa", "New Zealand", 
-    "Sweden", "Norway", "Argentina", "Egypt", "Indonesia", 
-    "Philippines", "Saudi Arabia", "Thailand", "Turkey", "United Arab Emirates", 
-    "Vietnam", "Germany", "France", "Italy", "Spain", 
-    "Netherlands", "Belgium"
-]
+def get_active_countries():
+    """
+    DB(regions 테이블)에 등록된 지역 코드 정보를 기준으로 활성화된 국가 목록을 동적으로 반환합니다.
+    - 예: KR-11 -> South Korea
+    - 등록된 국가가 없는 경우 최소 South Korea 1개를 보장합니다.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT region_code FROM regions")
+        codes = [row["region_code"] for row in cursor.fetchall()]
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ [Background Worker] DB 조회 실패 (South Korea 기본값 사용): {e}")
+        return ["South Korea"]
+
+    # ISO 3166-2 주(Province/State) 코드 또는 지명 매핑
+    countries = set()
+    for code in codes:
+        code_upper = str(code).upper()
+        if code_upper.startswith("KR-"):
+            countries.add("South Korea")
+        elif code_upper.startswith("US-"):
+            countries.add("United States")
+        elif code_upper.startswith("CN-"):
+            countries.add("China")
+        elif code_upper.startswith("JP-"):
+            countries.add("Japan")
+        elif code_upper.startswith("GB-"):
+            countries.add("United Kingdom")
+        # 추가적인 국가 코드가 들어오는 경우 매핑 확장 가능
+
+    return list(countries) if countries else ["South Korea"]
+
 
 def run_worker():
     print("🚀 [Background Worker] 가동 시작...")
@@ -41,7 +67,7 @@ def run_worker():
         print(f"\n🕒 [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 데이터 수집 사이클 시작...")
         state = load_lkv()
         
-        for country in COUNTRIES:
+        for country in get_active_countries():
             print(f"Fetching data for {country}...")
             country_data = state.get(country, {})
             
@@ -90,8 +116,8 @@ def run_worker():
             
         # 상태 저장
         save_lkv(state)
-        print(f"💾 수집 완료 및 저장됨. 10분 대기...")
-        time.sleep(600)  # 10분 주기
+        print(f"💾 수집 완료 및 저장됨. 30분 대기...")
+        time.sleep(1800)  # 30분 주기 (1800초)
 
 if __name__ == "__main__":
     run_worker()
