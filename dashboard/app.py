@@ -664,17 +664,20 @@ def render_regional_dashboard():
             c_t_label = interpret_corr(corr_temp)
             c_p_label = interpret_corr(corr_precip)
             
+            corr_temp_str = f"{corr_temp:+.3f}" if not pd.isna(corr_temp) else "N/A"
+            corr_precip_str = f"{corr_precip:+.3f}" if not pd.isna(corr_precip) else "N/A"
+            
             # HTML 카드형 레이아웃으로 변환 출력
             st.markdown(f"""
             <div class="kg">
-                <div class="kc" style="border-left: 4px solid {CL['r'] if abs(corr_temp)>=0.4 else CL['d']}">
+                <div class="kc" style="border-left: 4px solid {CL['r'] if (not pd.isna(corr_temp) and abs(corr_temp)>=0.4) else CL['d']}">
                     <div class="kl">기온(Temperature) 상관계수</div>
-                    <div class="kv">{corr_temp:+.3f}</div>
+                    <div class="kv">{corr_temp_str}</div>
                     <div class="ku">분석 결과: <b>{c_t_label}</b></div>
                 </div>
-                <div class="kc" style="border-left: 4px solid {CL['o'] if abs(corr_precip)>=0.4 else CL['d']}">
+                <div class="kc" style="border-left: 4px solid {CL['o'] if (not pd.isna(corr_precip) and abs(corr_precip)>=0.4) else CL['d']}">
                     <div class="kl">강수량(Precipitation) 상관계수</div>
-                    <div class="kv">{corr_precip:+.3f}</div>
+                    <div class="kv">{corr_precip_str}</div>
                     <div class="ku">분석 결과: <b>{c_p_label}</b></div>
                 </div>
             </div>

@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 .coverage
 *.csv
+!data/sample_inventory_data.csv

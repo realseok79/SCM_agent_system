@@ -37,11 +37,11 @@ def setup_test_db(monkeypatch):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
         ("서울특별시", "KR-11", "서울 메인 허브")
     )
     cursor.execute(
-        "INSERT INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
         ("부산광역시", "KR-26", "부산 메인 허브")
     )
     conn.commit()
