@@ -12,6 +12,7 @@ import requests
 import numpy as np
 import pandas as pd
 from datetime import datetime
+from typing import Optional
 from pytrends.request import TrendReq
 
 from dto.schemas import DataDTO, DemandDTO, RiskCategory, AlertLevel, OperationMode
@@ -139,7 +140,7 @@ class DataAgent:
             logger.error(f"외부 신호 수집 오류: {e} → 기본값 보간 처리")
             return defaults
 
-    def _fix_missing(self, value: float | None, field: str) -> float:
+    def _fix_missing(self, value: Optional[float], field: str) -> float:
         if value is None or np.isnan(value):
             if len(self._demand_history) >= 1:
                 fallback = float(np.mean(self._demand_history[-7:]))

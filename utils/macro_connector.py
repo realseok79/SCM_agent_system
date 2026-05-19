@@ -11,7 +11,11 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 class GlobalMacroEngine:
     def __init__(self):
-        self.fred_key = st.secrets.get("FRED_API_KEY", os.environ.get("FRED_API_KEY", ""))
+        try:
+            self.fred_key = st.secrets.get("FRED_API_KEY", os.environ.get("FRED_API_KEY", ""))
+        except Exception:
+            self.fred_key = os.environ.get("FRED_API_KEY", "")
+            
         try:
             self.fred = Fred(api_key=self.fred_key)
         except Exception as e:
