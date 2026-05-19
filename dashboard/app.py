@@ -1,10 +1,19 @@
 import json, os, sys, pandas as pd, numpy as np, matplotlib.pyplot as plt, concurrent.futures, time
+import shutil
+import tempfile
+import sqlite3
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 from matplotlib import rc
 import streamlit as st
 import importlib
+
+from db import get_db_connection
+from models import standardize_region
+from utils.data_parser import parse_and_route_file
+from utils.weather_connector import get_weather_for_region
 
 import utils.macro_connector
 import utils.scoring_engine
@@ -463,9 +472,270 @@ def render_simulation_dashboard():
         </table>
     </div>''', unsafe_allow_html=True)
 
+def render_regional_dashboard():
+    st.markdown(f'<div class="hdr"><div><div class="hdr-t">지역별 SCM 관제 센터</div><div class="hdr-s">지역별 재고 CRUD 및 기상 융합 인공지능 분석 관제탑</div></div></div>', unsafe_allow_html=True)
+    
+    # 1. 지역 등록 및 조회
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, region_name, region_code, description FROM regions ORDER BY region_name ASC")
+        regions = [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        st.error(f"지역 데이터를 읽어오지 못했습니다: {e}")
+        regions = []
+    finally:
+        conn.close()
+    
+    # 2단 레이아웃 (좌측: 지역 관리 및 데이터 업로드, 우측: 재고 모니터링 및 분석)
+    col1, col2 = st.columns([1, 2.2])
+    
+    with col1:
+        st.markdown('<div class="sec">지역 관리 & 데이터 수집</div>', unsafe_allow_html=True)
+        
+        # 신규 지역 등록
+        with st.expander("➕ 신규 지역 등록", expanded=False):
+            with st.form("new_region_form"):
+                new_name = st.text_input("지역명 (예: 서울, 부산, 경기, 제주 등)")
+                new_desc = st.text_input("설명 (예: 수도권 메인 기지)")
+                submit_btn = st.form_submit_button("지역 등록")
+                
+                if submit_btn:
+                    if not new_name.strip():
+                        st.error("지역명을 입력해주세요.")
+                    else:
+                        try:
+                            # 표준화 및 등록 시도
+                            standardized_name, region_code = standardize_region(new_name)
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "INSERT INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
+                                (standardized_name, region_code, new_desc)
+                            )
+                            conn.commit()
+                            st.success(f"지역 등록 완료: {standardized_name} ({region_code})")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("이미 등록된 지역 또는 코드입니다.")
+                        except Exception as e:
+                            st.error(f"등록 실패: {e}")
+                        finally:
+                            if 'conn' in locals() and conn:
+                                conn.close()
+                                
+        if not regions:
+            st.warning("⚠️ 등록된 지역이 없습니다. 먼저 지역을 등록해 주세요.")
+            return
+            
+        # 지역 선택
+        region_options = {f"{r['region_name']} ({r['region_code']})": r for r in regions}
+        selected_key = st.selectbox("관제할 지역 선택", options=list(region_options.keys()))
+        selected_region = region_options[selected_key]
+        
+        st.markdown(f"""
+        <div class="kc" style="margin-bottom: 10px;">
+            <div class="kl">선택된 지역 코드</div>
+            <div class="kv b">{selected_region['region_code']}</div>
+            <div class="ku">{selected_region['description'] or '설명 없음'}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 데이터 업로드
+        st.markdown('<div class="sec">SCM 엑셀/CSV 데이터 업로드</div>', unsafe_allow_html=True)
+        uploaded_file = st.file_uploader("지역 재고 및 수요 이력 업로드", type=["csv", "xlsx", "xls"], key="regional_uploader")
+        
+        if uploaded_file is not None:
+            if st.button("🚀 데이터 파싱 및 라우팅 실행", key="btn_regional_route"):
+                suffix = os.path.splitext(uploaded_file.name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    shutil.copyfileobj(uploaded_file, tmp)
+                    tmp_path = tmp.name
+                    
+                try:
+                    stats = parse_and_route_file(tmp_path)
+                    if stats["error_count"] == 0:
+                        st.success(f"성공적으로 업로드 완료! ({stats['success_count']}행 적재)")
+                    else:
+                        st.warning(f"업로드 완료 (성공: {stats['success_count']}행, 실패: {stats['error_count']}행)")
+                        with st.expander("실패 사유 보기"):
+                            for err in stats["errors"]:
+                                st.write(err)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"파싱 실패: {e}")
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                        
+    with col2:
+        st.markdown('<div class="sec">실시간 지역 재고 흐름 & 기상 융합 분석</div>', unsafe_allow_html=True)
+        
+        # 1. 해당 지역 재고 데이터 조회
+        conn = get_db_connection()
+        inv_df = pd.read_sql_query(
+            "SELECT product_name, date, quantity FROM region_inventory WHERE region_code = ? ORDER BY date ASC",
+            conn, params=(selected_region["region_code"],)
+        )
+        
+        # 2. 기상 데이터 조회
+        weather_df = pd.read_sql_query(
+            "SELECT date, temp, humidity, precipitation, weather_desc FROM weather_cache WHERE region_code = ? ORDER BY date ASC",
+            conn, params=(selected_region["region_code"],)
+        )
+        conn.close()
+        
+        if inv_df.empty:
+            st.info("💡 **[재고 데이터 없음]** 해당 지역에 적재된 SCM 재고 데이터가 없습니다. 좌측 드롭존을 통해 데이터를 먼저 업로드해 주세요.")
+            return
+            
+        # 기상 정보가 비어있는 날짜가 있다면 실시간으로 기상 데이터 채우기 (캐싱 기동)
+        unique_dates = inv_df["date"].unique()
+        missing_weather_dates = [d for d in unique_dates if weather_df.empty or d not in weather_df["date"].values]
+        
+        if missing_weather_dates:
+            with st.spinner("🌡️ 누락된 일별 외부 기상 데이터를 실시간 수집 및 캐싱 중..."):
+                for d in missing_weather_dates:
+                    try:
+                        get_weather_for_region(selected_region["region_code"], d)
+                    except Exception:
+                        pass
+            # 재조회
+            conn = get_db_connection()
+            weather_df = pd.read_sql_query(
+                "SELECT date, temp, humidity, precipitation, weather_desc FROM weather_cache WHERE region_code = ? ORDER BY date ASC",
+                conn, params=(selected_region["region_code"],)
+            )
+            conn.close()
+            
+        # 재고 KPI 카드 렌더링
+        products = inv_df["product_name"].unique()
+        total_qty = inv_df.groupby("product_name")["quantity"].last().sum() # 가장 최근 재고 합산
+        
+        st.markdown(f'''<div class="kg">
+        <div class="kc"><div class="kl">모니터링 품목수</div><div class="kv">{len(products)} SKU</div><div class="ku">지정 품목 리스트</div></div>
+        <div class="kc"><div class="kl">최신 총 재고량</div><div class="kv b">{total_qty:,.0f}</div><div class="ku">units (마지막 일자 기준)</div></div>
+        <div class="kc"><div class="kl">기상 관측일수</div><div class="kv g">{len(weather_df)}일</div><div class="ku">동기화 완료</div></div>
+        </div>''', unsafe_allow_html=True)
+        
+        # 품목 선택 필터
+        selected_prod = st.selectbox("분석할 품목 선택", options=products)
+        prod_inv = inv_df[inv_df["product_name"] == selected_prod]
+        
+        # 병합 데이터 생성
+        merged = pd.merge(prod_inv, weather_df, on="date", how="inner")
+        
+        # 1. 재고 변동 차트 시각화
+        st.markdown(f'<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>[{selected_prod}] 일별 재고 변동 추이</div>', unsafe_allow_html=True)
+        
+        fig, ax = plt.subplots(figsize=(10, 2.8), dpi=100)
+        fig.patch.set_facecolor(BG)
+        ax.set_facecolor(BG)
+        
+        # X축 날짜 가독성 처리
+        dates_parsed = pd.to_datetime(prod_inv["date"])
+        ax.plot(dates_parsed, prod_inv["quantity"], color="#8ab4f8", lw=1.6, label="재고량")
+        ax.fill_between(dates_parsed, prod_inv["quantity"], alpha=0.08, color="#8ab4f8")
+        
+        sax(ax)
+        ax.set_xlabel("날짜 (Date)", fontsize=8)
+        ax.set_ylabel("수량 (Units)", fontsize=8)
+        fig.tight_layout(pad=0.5)
+        st.pyplot(fig, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # 2. 기상 융합 상관관계 분석
+        st.markdown('<div class="sec">기상 융합 SCM 인공지능 상관분석</div>', unsafe_allow_html=True)
+        
+        if merged.empty or len(merged) < 3:
+            st.warning("상관관계 분석을 수행하기 위한 데이터가 부족합니다. 최소 3일 이상의 일별 재고와 기상 매핑 데이터가 필요합니다.")
+        else:
+            # 피어슨 상관계수 산출
+            corr_temp = merged["quantity"].corr(merged["temp"])
+            corr_precip = merged["quantity"].corr(merged["precipitation"])
+            
+            def interpret_corr(val):
+                if pd.isna(val): return "분석 불가"
+                if abs(val) >= 0.7: return "매우 강력한 상관관계"
+                if abs(val) >= 0.4: return "뚜렷한 상관관계"
+                if abs(val) >= 0.1: return "약한 상관관계"
+                return "상관성 없음 (독립적)"
+                
+            c_t_label = interpret_corr(corr_temp)
+            c_p_label = interpret_corr(corr_precip)
+            
+            # HTML 카드형 레이아웃으로 변환 출력
+            st.markdown(f"""
+            <div class="kg">
+                <div class="kc" style="border-left: 4px solid {CL['r'] if abs(corr_temp)>=0.4 else CL['d']}">
+                    <div class="kl">기온(Temperature) 상관계수</div>
+                    <div class="kv">{corr_temp:+.3f}</div>
+                    <div class="ku">분석 결과: <b>{c_t_label}</b></div>
+                </div>
+                <div class="kc" style="border-left: 4px solid {CL['o'] if abs(corr_precip)>=0.4 else CL['d']}">
+                    <div class="kl">강수량(Precipitation) 상관계수</div>
+                    <div class="kv">{corr_precip:+.3f}</div>
+                    <div class="ku">분석 결과: <b>{c_p_label}</b></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 융합 차트 (이중축 시각화)
+            st.markdown(f'<div class="cc"><div class="ct"><span class="dt" style="background:#fdd663"></span>[{selected_prod}] 재고량 vs 외부 환경 변수 (이중축 분석)</div>', unsafe_allow_html=True)
+            
+            fig_double, ax1 = plt.subplots(figsize=(10, 3.2), dpi=100)
+            fig_double.patch.set_facecolor(BG)
+            ax1.set_facecolor(BG)
+            
+            m_dates = pd.to_datetime(merged["date"])
+            
+            # Left axis: Inventory Qty
+            ax1.plot(m_dates, merged["quantity"], color="#8ab4f8", lw=1.8, label="재고량")
+            ax1.set_ylabel("재고량 (Units)", color="#8ab4f8", fontsize=8)
+            ax1.tick_params(colors="#8ab4f8", labelsize=7)
+            sax(ax1)
+            
+            # Right axis: Weather
+            ax2 = ax1.twinx()
+            weather_var = st.radio("이중축 플로팅 변수 선택", ["기온 (°C)", "강수량 (mm)"], horizontal=True, key="weather_axis_radio")
+            
+            if weather_var == "기온 (°C)":
+                ax2.plot(m_dates, merged["temp"], color="#f28b82", lw=1.2, ls="--", label="기온 (°C)")
+                ax2.set_ylabel("기온 (°C)", color="#f28b82", fontsize=8)
+                ax2.tick_params(colors="#f28b82", labelsize=7)
+            else:
+                ax2.bar(m_dates, merged["precipitation"], color="#fdd663", alpha=0.4, width=0.6, label="강수량 (mm)")
+                ax2.set_ylabel("강수량 (mm)", color="#fdd663", fontsize=8)
+                ax2.tick_params(colors="#fdd663", labelsize=7)
+                
+            fig_double.tight_layout(pad=0.5)
+            st.pyplot(fig_double, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # SCM 인공지능 예측 분석 코멘트
+            st.markdown('<div class="sec">SCM AI 특이 지표 진단 보고서</div>', unsafe_allow_html=True)
+            
+            # 분석 리포트 자동 생성
+            comments = []
+            if corr_temp > 0.4:
+                comments.append(f"📈 <b>온도 상승에 따른 재고 유입 증가:</b> 기온과 재고량이 뚜렷한 양의 상관관계({corr_temp:.2f})를 보입니다. 여름철 계절적 수요 급증에 대비해 선제적으로 안전 재고(Safety Stock)를 확보 중인 것으로 판단됩니다.")
+            elif corr_temp < -0.4:
+                comments.append(f"📉 <b>온도 상승에 따른 빠른 재고 소진:</b> 기온과 재고량이 강한 음의 상관관계({corr_temp:.2f})를 나타냅니다. 혹서기 수요 폭증으로 인한 품절(Stockout) 리스크가 우려되므로 재오더포인트(ROP)를 긴급히 높일 것을 권장합니다.")
+                
+            if corr_precip > 0.4:
+                comments.append(f"🌧️ <b>우천 시 조달 리스크 대비 재고 비축:</b> 강수량과 재고량이 비례 관계({corr_precip:.2f})입니다. 물류 배송 지연 우려에 따라 선제적인 버퍼 재고 확보 정책이 작동하고 있습니다.")
+            elif corr_precip < -0.4:
+                comments.append(f"⚠️ <b>폭우 시 급격한 리드타임 지연 및 재고 고갈:</b> 강수량이 늘어날수록 재고량이 낮아지는 현상({corr_precip:.2f})이 발견됩니다. 폭우로 인한 조달 리드타임 지연이 실질적인 재고 소진으로 이어지고 있으므로 가드레일 승인 수량을 20% 긴급 증액해야 합니다.")
+                
+            if not comments:
+                comments.append("✅ <b>안정 상태 유지:</b> 기상 변동에 따른 급격한 재고 변동 리스크가 발견되지 않았습니다. 현재의 자율 SCM 발주 정책이 기상 변수로부터 독립적으로 안정되게 제어되고 있습니다.")
+                
+            for comment in comments:
+                st.markdown(f'<div class="ep en" style="border-left-color: #8ab4f8;"><div class="et">[AI 진단] SCM 의사결정 제언</div><div class="eb">{comment}</div></div>', unsafe_allow_html=True)
+
 def main():
     st.sidebar.title("SCM 관제 시스템 메뉴")
-    menu = st.sidebar.radio("이동", ["메인 대시보드", "글로벌 공급망 리스크 관제탑"])
+    menu = st.sidebar.radio("이동", ["메인 대시보드", "지역별 SCM 관제 센터", "글로벌 공급망 리스크 관제탑"])
     
     # 운영 모드 투트랙 스위치 추가
     st.sidebar.markdown("---")
@@ -542,6 +812,9 @@ def main():
             # SIMULATION_MODE 렌더링
             render_simulation_dashboard()
             
+    elif menu == "지역별 SCM 관제 센터":
+        render_regional_dashboard()
+        
     elif menu == "글로벌 공급망 리스크 관제탑":
         st.markdown(f'<div class="hdr"><div><div class="hdr-t">글로벌 공급망 리스크 관제탑</div><div class="hdr-s">Global Supply Chain Risk Control Tower &nbsp;·&nbsp; 실시간 국가별 거점 리스크 및 기상 관제</div></div></div>',unsafe_allow_html=True)
         

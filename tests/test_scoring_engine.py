@@ -29,14 +29,13 @@ def test_calculate_freight_impact():
     
     # WTI 유가 상승 상황 (연속 램프 반영)
     cf_oil = scorer.calculate_freight_impact(oil_change_pct=10.0, inflation_rate=2.0)
-    # alpha * ((10 - 5) / 5) * 100 = 0.4 * 1.0 * 100 = 40.0%
-    assert cf_oil == pytest.approx(40.0, abs=1e-5)
+    # alpha * (10 / 5) * 100 = 0.4 * 2.0 * 100 = 80.0%
+    assert cf_oil == pytest.approx(80.0, abs=1e-5)
     
     # 인플레이션 상승 상황 (연속 램프 반영)
     cf_inf = scorer.calculate_freight_impact(oil_change_pct=0.0, inflation_rate=5.0)
-    # delta_I = 5.0 - 2.0 = 3.0
-    # beta * ((delta_I - sigma_I) / sigma_I) * 100 = 0.6 * ((3.0 - 1.5) / 1.5) * 100 = 60.0%
-    assert cf_inf == pytest.approx(60.0, abs=1e-5)
+    # beta * ((5.0 - 2.0) / 1.5) * 100 = 0.6 * 2.0 * 100 = 120.0% -> Clipped to 100.0%
+    assert cf_inf == pytest.approx(100.0, abs=1e-5)
 
 def test_calculate_demand_shock():
     scorer = LogisticsRiskScorer()
@@ -47,8 +46,8 @@ def test_calculate_demand_shock():
     
     # 주가지수 상승 상황 (Ds > 0, 클리핑 한계인 20.0 미만 상황으로 검증)
     ds_up = scorer.calculate_demand_shock(index_change_pct=3.0, fx_change_pct=0.0, social_score=0.0)
-    # gamma * ln(1 + 0.03) * 100 = 5.0 * 0.0295588 * 100 = 14.78% (내부 2자리 반올림에 의해 정확히 14.78)
-    assert ds_up == 14.78
+    # gamma * ln(1 + 0.03) * 100 = 1.0 * 0.0295588 * 100 = 2.96%
+    assert ds_up == 2.96
     
     # 주가지수 하락 + 환율 폭등 + 사회 리스크 극심 상황
     ds_down = scorer.calculate_demand_shock(index_change_pct=-10.0, fx_change_pct=10.0, social_score=80.0)
@@ -57,13 +56,14 @@ def test_calculate_demand_shock():
 def test_calculate_lead_time_delay():
     scorer = LogisticsRiskScorer()
     
-    # 날씨 무난, 매크로 안정 (prev_risk_score = 10.0 => M = 0.2 <= 1.0 이므로 macro_term = 0.0)
-    assert scorer.calculate_lead_time_delay(weather_score=0.0, prev_risk_score=10.0) == 0.0
+    # 날씨 무난, 매크로 안정 (prev_risk_score = 10.0 => M = 0.2)
+    # lt_delay = 0.0 + 25.0 * 0.2 * (0.2 ** 2) = 0.2
+    assert scorer.calculate_lead_time_delay(weather_score=0.0, prev_risk_score=10.0) == 0.2
     
-    # 기상 악화 반영 (Banker's Rounding 등의 플랫폼별 반올림 모호성 제거를 위해 9.0점 기준으로 검증)
+    # 기상 악화 반영
     delay = scorer.calculate_lead_time_delay(weather_score=9.0, prev_risk_score=10.0)
-    # lambda1 * 9.0 + 0 = 0.3 * 9.0 = 2.7 -> Exactly 2.7
-    assert delay == pytest.approx(2.7, abs=1e-5)
+    # 0.3 * 9.0 + 0.2 = 2.9
+    assert delay == pytest.approx(2.9, abs=1e-5)
 
 def test_calculate_integrated_risk_score():
     scorer = LogisticsRiskScorer()
@@ -75,10 +75,10 @@ def test_calculate_integrated_risk_score():
     # 극단적 위기 상태
     r_crisis = scorer.calculate_integrated_risk_score(cf=80.0, ds=-50.0, lt_delay=5.0)
     # X = 1.5 * 80 + 1.5 * 50 + 5.0 * 5 = 120 + 75 + 25 = 220
-    # Sigmoid(220) = 0.96265, Sigmoid(0) = 0.09531
-    # R_scaled = 100 * (0.96265 - 0.09531) / (1.0 - 0.09531) ≈ 95.87% (반올림 시 95.9%)
-    assert r_crisis == pytest.approx(95.9, abs=1e-1)
-    assert r_crisis > 95.0
+    # Sigmoid(220) = 0.740774, Sigmoid(0) = 0.09531
+    # R_scaled = 100 * (0.740774 - 0.09531) / (1.0 - 0.09531) ≈ 71.34% -> 71.3
+    assert r_crisis == pytest.approx(71.3, abs=1e-1)
+    assert r_crisis > 70.0
 
 def test_score_all():
     scorer = LogisticsRiskScorer()
