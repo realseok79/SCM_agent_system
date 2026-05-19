@@ -76,7 +76,12 @@ def parse_and_route_file(file_path: str) -> dict:
                 if not product_name or product_name.lower() == "nan":
                     raise ValueError(f"행 {idx+1}: 상품명이 비어있습니다.")
                     
-                quantity = float(row[mapping["quantity"]])
+                quantity_val = row[mapping["quantity"]]
+                if pd.isna(quantity_val):
+                    raise ValueError(f"행 {idx+1}: 수량이 누락되었습니다(NaN).")
+                quantity = float(quantity_val)
+                if quantity < 0:
+                    raise ValueError(f"행 {idx+1}: 수량은 음수일 수 없습니다 ({quantity}).")
                 
                 # 3. 날짜 추출 및 보정
                 if "date" in mapping:
@@ -118,8 +123,13 @@ def parse_and_route_file(file_path: str) -> dict:
     finally:
         conn.close()
         
+    # 에러 메시지는 최대 10개까지만 노출하고 나머지는 생략(Et Cetera)
+    displayed_errors = errors
+    if len(errors) > 10:
+        displayed_errors = errors[:10] + [f"...외 {len(errors) - 10}개의 에러가 더 발생했습니다. (Et Cetera)"]
+        
     return {
         "success_count": success_count,
         "error_count": error_count,
-        "errors": errors
+        "errors": displayed_errors
     }
