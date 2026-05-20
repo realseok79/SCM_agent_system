@@ -97,7 +97,7 @@ def render_home_dashboard():
         if "order_approved_seoul" not in st.session_state:
             st.session_state["order_approved_seoul"] = False
 
-        if not st.session_state["order_approved_seoul"]:
+        if st.session_state["order_approved_seoul"] is False:
             st.markdown("""
             <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; margin-bottom: 10px;">
                 <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [안전 재고 경고] 서울 물류창고 마스크 고갈 우려</div>
@@ -108,9 +108,69 @@ def render_home_dashboard():
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button("📥 자동 발주 승인 및 다운로드", key="btn_download_seoul"):
-                st.session_state["order_approved_seoul"] = True
-                st.success("발주 승인되었습니다.")
+            # 권한 조회
+            user_role = st.session_state.get("user_role", "ROLE_USER")
+            
+            if user_role == "ROLE_EXECUTIVE":
+                st.info("🔒 [읽기 전용] 경영진 계정은 발주 승인 및 반려 피드백 조작 권한이 없습니다.")
+            elif user_role == "ROLE_LOGISTICS":
+                col1, = st.columns([1])
+                with col1:
+                    if st.button("📥 자동 발주 승인 및 다운로드", key="btn_download_seoul", use_container_width=True):
+                        st.session_state["order_approved_seoul"] = True
+                        st.success("발주 승인되었습니다.")
+                        st.rerun()
+                st.warning("⚠️ AI 학습 피드백(반려) 권한은 관리자(ROLE_ADMIN) 전용입니다.")
+            else: # ROLE_ADMIN
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("📥 자동 발주 승인 및 다운로드", key="btn_download_seoul", use_container_width=True):
+                        st.session_state["order_approved_seoul"] = True
+                        st.success("발주 승인되었습니다.")
+                        st.rerun()
+                with col2:
+                    if st.button("❌ 반려 및 AI 피드백 전송", key="btn_reject_seoul", use_container_width=True):
+                        st.session_state["rejecting_order"] = True
+                        st.rerun()
+
+                if st.session_state.get("rejecting_order", False):
+                    st.markdown("<div style='background-color:#f28b820a; border: 1px solid #f28b8230; padding:12px; border-radius:4px; margin-top:10px;'>", unsafe_allow_html=True)
+                    st.write("📋 **반려 사유 (AI 매핑 가중치 피드백)**")
+                    mapping_opt = st.selectbox(
+                        "어떤 컬럼의 매핑 오류가 발주 실패를 유발했습니까?",
+                        options=[
+                            ("수량 데이터 매핑 오류 (quantity)", "quantity", "물품수량"),
+                            ("날짜 데이터 매핑 오류 (date)", "date", "입고일자"),
+                            ("지역 코드 매핑 오류 (region_code)", "region_code", "지점명")
+                        ],
+                        format_func=lambda x: x[0]
+                    )
+                    if st.button("피드백 전송 및 반려 완료", key="submit_reject_seoul"):
+                        payload = {
+                            "companyId": "SIGMA",
+                            "rawHeader": mapping_opt[2],
+                            "mappedColumn": mapping_opt[1]
+                        }
+                        response = auth_helper.api_post("/api/feedback/reject-mapping", payload)
+                        if response:
+                            st.session_state["order_approved_seoul"] = "REJECTED"
+                            st.session_state["rejecting_order"] = False
+                            st.success("반려 피드백이 전송되었으며, AI 매핑 감쇠 가중치가 업데이트되었습니다!")
+                            st.rerun()
+                        else:
+                            st.error("피드백 전송에 실패했습니다. 세션 정보를 확인하십시오.")
+                    st.markdown("</div>", unsafe_allow_html=True)
+        elif st.session_state["order_approved_seoul"] == "REJECTED":
+            st.markdown("""
+            <div class="ep ec" style="border-left-color: #f5c2c7; background-color: #f8d7da0f; padding: 12px; margin-bottom: 10px;">
+                <div class="et" style="color: #ea868f; font-weight: bold; font-size: 13px;">❌ [발주 반려] AI 매핑 가중치 피드백 완료</div>
+                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #ea868f;">
+                    서울점 마스크 발주가 반려되었습니다. 관리자의 반려 피드백이 수치 감쇠 모델(Decay Factor 0.9)을 통해 AI 에이전트의 맵퍼 규칙에 반영되었습니다.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🔄 발주 요청 초기화 (테스트용)", key="reset_seoul"):
+                st.session_state["order_approved_seoul"] = False
                 st.rerun()
         else:
             st.markdown("""

@@ -111,4 +111,16 @@ public class DashboardControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
     }
+
+    @Test
+    public void testGetLatestInsight() {
+        com.sigma.scm.domain.RegionalInsight mockInsight = new com.sigma.scm.domain.RegionalInsight();
+        mockInsight.setActionPlanMsg("Test action plan");
+        when(dashboardService.getLatestInsight("KR-11")).thenReturn(mockInsight);
+
+        ResponseEntity<com.sigma.scm.domain.RegionalInsight> response = dashboardController.getLatestInsight("KR-11");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Test action plan", response.getBody().getActionPlanMsg());
+    }
 }

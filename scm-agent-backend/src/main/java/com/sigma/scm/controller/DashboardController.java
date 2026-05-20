@@ -2,6 +2,7 @@ package com.sigma.scm.controller;
 
 import com.sigma.scm.domain.RegionInventory;
 import com.sigma.scm.domain.WeatherCache;
+import com.sigma.scm.domain.RegionalInsight;
 import com.sigma.scm.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -78,5 +79,10 @@ public class DashboardController {
         String productName = (String) payload.get("productName");
         double requiredQty = ((Number) payload.get("requiredQty")).doubleValue();
         return ResponseEntity.ok(crossDockingService.attemptCrossDocking(productName, requiredQty));
+    }
+
+    @GetMapping("/region/{code}/insight")
+    public ResponseEntity<RegionalInsight> getLatestInsight(@PathVariable("code") String regionCode) {
+        return ResponseEntity.ok(dashboardService.getLatestInsight(regionCode));
     }
 }

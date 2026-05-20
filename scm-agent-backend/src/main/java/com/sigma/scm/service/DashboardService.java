@@ -106,19 +106,29 @@ public class DashboardService {
     public Map<String, Object> getRiskScore(String regionCode) {
         Map<String, Object> riskResult = new HashMap<>();
 
-        // 날씨와 최근 출고 이력을 이용해 물류 위험도 평가
+        // 1. 최근에 적재된 AI Risk Score 정보 조회 시도
+        RegionalInsight latestInsight = getLatestInsight(regionCode);
+        if (latestInsight != null && latestInsight.getRiskScore() != null) {
+            riskResult.put("regionCode", regionCode);
+            riskResult.put("riskScore", latestInsight.getRiskScore());
+            riskResult.put("riskLevel", latestInsight.getRiskLevel() != null ? latestInsight.getRiskLevel() : "LOW");
+            riskResult.put("description", latestInsight.getDescription() != null ? latestInsight.getDescription() : "정상 상태: 운송 위험도가 분석 범위 내에 있습니다.");
+            return riskResult;
+        }
+
+        // 2. Fallback: 기상 정보를 이용한 기존 기초 룰 계산
         List<WeatherCache> weather = weatherCacheRepository.findByIdRegionCode(regionCode);
         boolean severeWeather = weather.stream()
                 .anyMatch(w -> w.getTemp() != null && (w.getTemp() > 38.0 || w.getTemp() < -15.0) ||
                         w.getPrecipitation() != null && w.getPrecipitation() > 50.0);
 
-        double score = severeWeather ? 85.0 : 25.0; // 날씨 위험 감지 시 85점 부여
+        double score = severeWeather ? 85.0 : 25.0;
         String riskLevel = score >= 60.0 ? "HIGH" : "LOW";
 
         riskResult.put("regionCode", regionCode);
         riskResult.put("riskScore", score);
         riskResult.put("riskLevel", riskLevel);
-        riskResult.put("description", severeWeather ? "기상 악화 경보: 운송 지연이 감지되었습니다." : "정상 상태: 운송 지연 위험도가 낮습니다.");
+        riskResult.put("description", severeWeather ? "기상 악화 경보: 운송 지연이 감지되었습니다. (Fallback)" : "정상 상태: 운송 지연 위험도가 낮습니다. (Fallback)");
 
         return riskResult;
     }
@@ -152,5 +162,12 @@ public class DashboardService {
             order.setCreatedAt(java.time.LocalDateTime.now());
         }
         return rebalancingOrderRepository.save(order);
+    }
+
+    public RegionalInsight getLatestInsight(String regionCode) {
+        return regionalInsightRepository.findByIdRegionCode(regionCode).stream()
+                .sorted((a, b) -> b.getId().getDate().compareTo(a.getId().getDate()))
+                .findFirst()
+                .orElse(null);
     }
 }

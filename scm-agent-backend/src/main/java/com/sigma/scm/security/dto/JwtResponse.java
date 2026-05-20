@@ -4,9 +4,10 @@ public record JwtResponse(
     String accessToken,
     String refreshToken,
     String tokenType,
-    long expiresIn
+    long expiresIn,
+    String role
 ) {
-    public JwtResponse(String accessToken, String refreshToken, long expiresIn) {
-        this(accessToken, refreshToken, "Bearer", expiresIn);
+    public JwtResponse(String accessToken, String refreshToken, long expiresIn, String role) {
+        this(accessToken, refreshToken, "Bearer", expiresIn, role);
     }
 }

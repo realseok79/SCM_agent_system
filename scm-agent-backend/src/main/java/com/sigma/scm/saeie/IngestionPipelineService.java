@@ -290,6 +290,7 @@ public class IngestionPipelineService {
         response.put("batchId", batchId);
         response.put("driftScore", driftScore);
         response.put("qualityScore", qualityScore);
+        response.put("mapping", mapping);
 
         if (driftScore < 0.2 && !valResult.hasCritical && !valResult.hasError) {
             String reasonText = "Bypass automatic approval: perfect schema alignment with zero hard validation errors.";

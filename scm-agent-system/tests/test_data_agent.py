@@ -130,20 +130,64 @@ def test_data_agent_duplicate_prevention_and_dynamic_sku(monkeypatch):
     assert dto.unit_cost == 4.0 / 0.2
     assert dto.demand_impact == 0.4
 
-def test_parse_unstructured_input():
+def test_parse_unstructured_input(monkeypatch):
     import pandas as pd
     from dto.schemas import RiskCategory
     agent = DataAgent()
     
-    # 1. 자연어 텍스트 파싱 검증
+    # 1. Ensure OPENAI_API_KEY is not set for deterministic fallback test
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    
+    # 2. 자연어 텍스트 파싱 검증
     res_text = agent.parse_unstructured_input(text="반도체 칩 250개 입고")
     assert res_text["item_name"] == "고성능 반도체 칩(MCU)"
     assert res_text["quantity"] == 250.0
     assert res_text["category"] == RiskCategory.TECH_AND_SEMICONDUCTOR
     
-    # 2. 엑셀 파일 DataFrame 파싱 검증
+    # 3. 엑셀 파일 DataFrame 파싱 검증
     df = pd.DataFrame([{"품목명": "메모리 모듈", "수량": 500}])
     res_df = agent.parse_unstructured_input(file_df=df)
     assert res_df["item_name"] == "메모리 모듈"
     assert res_df["quantity"] == 500.0
     assert res_df["category"] == RiskCategory.TECH_AND_SEMICONDUCTOR
+
+def test_parse_unstructured_input_with_llm(monkeypatch):
+    from dto.schemas import RiskCategory
+    agent = DataAgent()
+    monkeypatch.setenv("OPENAI_API_KEY", "mock-key")
+    
+    class MockParsed:
+        item_name = "테스트 반도체"
+        quantity = 330.0
+        category = "TECH_AND_SEMICONDUCTOR"
+        
+    class MockMessage:
+        parsed = MockParsed()
+        
+    class MockChoice:
+        message = MockMessage()
+        
+    class MockCompletion:
+        choices = [MockChoice()]
+        
+    class MockChatCompletions:
+        def parse(self, *args, **kwargs):
+            return MockCompletion()
+            
+    class MockChat:
+        completions = MockChatCompletions()
+        
+    class MockBeta:
+        chat = MockChat()
+        
+    class MockOpenAI:
+        def __init__(self, *args, **kwargs):
+            self.beta = MockBeta()
+            
+    monkeypatch.setattr("openai.OpenAI", MockOpenAI)
+    
+    res = agent.parse_unstructured_input(text="임의의 자연어 텍스트")
+    assert res["item_name"] == "테스트 반도체"
+    assert res["quantity"] == 330.0
+    assert res["category"] == RiskCategory.TECH_AND_SEMICONDUCTOR
+

@@ -16,7 +16,14 @@ from typing import Optional
 from pytrends.request import TrendReq
 
 from dto.schemas import DataDTO, DemandDTO, RiskCategory, AlertLevel, OperationMode
+from pydantic import BaseModel, Field
 from utils.logger import get_logger
+
+class UnstructuredParseOutput(BaseModel):
+    item_name: str = Field(description="추출된 품목명 또는 제품명 (예: 반도체 칩, 마스크, 의류 등)")
+    quantity: float = Field(description="추출된 발주 수량")
+    category: str = Field(description="리스크 카테고리. 다음 중 하나여야 함: LOGISTICS_AND_TRADE, WEATHER_AND_CLIMATE, TECH_AND_SEMICONDUCTOR, FINANCES_AND_MACRO, UNCLASSIFIED")
+
 from agents.config import PATHS, NETWORK
 from agents.data_config import build_weight_map, get_demand_impact_score
 
@@ -370,8 +377,43 @@ class DataAgent:
             except Exception:
                 return {"item_name": "엑셀 업로드 부품", "quantity": 150.0, "category": RiskCategory.LOGISTICS_AND_TRADE}
 
-        # 2. 자연어 텍스트 메모장 파싱인 경우 (정규식 및 텍스트 쪼가리 맥락 파악 폴백)
+        # 2. 자연어 텍스트 메모장 파싱인 경우
         if text:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                try:
+                    from openai import OpenAI
+                    client = OpenAI(api_key=api_key, timeout=5.0)
+                    
+                    completion = client.beta.chat.completions.parse(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "You are a precise SCM unstructured text parser."},
+                            {"role": "user", "content": f"Parse the following text into SCM request details:\n{text}"}
+                        ],
+                        response_format=UnstructuredParseOutput,
+                    )
+                    parsed = completion.choices[0].message.parsed
+                    if parsed:
+                        cat_str = parsed.category
+                        try:
+                            # Map string to RiskCategory value if matched
+                            if cat_str in RiskCategory.ALL:
+                                category_val = cat_str
+                            else:
+                                category_val = RiskCategory.UNCLASSIFIED
+                        except Exception:
+                            category_val = RiskCategory.UNCLASSIFIED
+                            
+                        return {
+                            "item_name": parsed.item_name,
+                            "quantity": parsed.quantity,
+                            "category": category_val
+                        }
+                except Exception as e:
+                    logger.warning(f"⚠️ OpenAI Structured Output 파싱 실패 ({e}) - 정규식 폴백 작동")
+
+            # [서킷 브레이커 Fallback] 정규식 및 텍스트 쪼가리 맥락 파악 규칙 기반 파싱
             import re
             cleaned = text.replace(" ", "")
             
