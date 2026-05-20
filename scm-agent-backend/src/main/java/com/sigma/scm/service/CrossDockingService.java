@@ -79,6 +79,7 @@ public class CrossDockingService {
                                 order.setTransferQty(transferQtyInt);
                                 order.setSavedCost(savedCost);
                                 order.setStatus("APPROVED");
+                                order.setReason(String.format("[과잉: %s (DoS %.0f일)] ➔ [결핍: 글로벌 (대체보충)]", fromRegion, dos));
                                 order.setCreatedAt(LocalDateTime.now());
 
                                 rebalancingOrderRepository.save(order);

@@ -59,4 +59,9 @@ public class DashboardController {
             @PathVariable("code") String regionCode) {
         return ResponseEntity.ok(dashboardService.getAging(regionCode));
     }
+
+    @GetMapping("/rebalancing-orders")
+    public ResponseEntity<List<com.sigma.scm.domain.InventoryRebalancingOrder>> getRebalancingOrders() {
+        return ResponseEntity.ok(dashboardService.getRebalancingOrders());
+    }
 }

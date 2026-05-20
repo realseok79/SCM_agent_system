@@ -22,6 +22,7 @@ public class DashboardService {
     private final RegionalInsightRepository regionalInsightRepository;
     private final DailyDemandStatsRepository dailyDemandStatsRepository;
     private final StockOutLogRepository stockOutLogRepository;
+    private final InventoryRebalancingOrderRepository rebalancingOrderRepository;
 
     public Map<String, Object> getSummary() {
         Map<String, Object> summary = new HashMap<>();
@@ -138,5 +139,9 @@ public class DashboardService {
                 })
                 .sorted((a, b) -> ((String) a.get("date")).compareTo((String) b.get("date")))
                 .collect(Collectors.toList());
+    }
+
+    public List<InventoryRebalancingOrder> getRebalancingOrders() {
+        return rebalancingOrderRepository.findAll();
     }
 }

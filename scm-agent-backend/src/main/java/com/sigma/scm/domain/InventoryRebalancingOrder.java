@@ -35,6 +35,9 @@ public class InventoryRebalancingOrder {
     @Column(length = 50)
     private String status = "PENDING";
 
+    @Column(length = 255)
+    private String reason;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 }
