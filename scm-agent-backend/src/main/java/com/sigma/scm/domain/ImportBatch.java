@@ -37,7 +37,6 @@ public class ImportBatch {
     @Column(name = "quality_score")
     private Double qualityScore;
 
-    @Lob
     @Column(name = "validated_payload_snapshot")
     private byte[] validatedPayloadSnapshot;
 

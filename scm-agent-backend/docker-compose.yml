@@ -52,6 +52,7 @@ services:
       SPRING_DATASOURCE_USERNAME: scm_admin
       SPRING_DATASOURCE_PASSWORD: scm_secret_password
       ANALYSIS_SERVICE_URL: http://analysis-service:8090
+      SCM_ANALYSIS_SERVICE_URL: http://analysis-service:8090
     networks:
       - scm-network
 

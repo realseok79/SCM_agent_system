@@ -92,3 +92,18 @@ def api_post(endpoint, payload):
     except Exception as e:
         print(f"API POST {endpoint} failed: {e}")
     return None
+
+def api_delete(endpoint):
+    """
+    인증 헤더를 포함해 백엔드 API로부터 DELETE 요청을 보냅니다.
+    """
+    if not check_auth_or_refresh():
+        return False
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        res = requests.delete(f"{API_BASE_URL}{endpoint}", headers=headers, timeout=10)
+        if res.status_code in [200, 204]:
+            return True
+    except Exception as e:
+        print(f"API DELETE {endpoint} failed: {e}")
+    return False

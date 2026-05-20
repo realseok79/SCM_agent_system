@@ -139,7 +139,11 @@ REGION_MAP = {
     "jeju": ("제주특별자치도", "KR-49"),
     "제주특별자치도": ("제주특별자치도", "KR-49"),
     "jejudo": ("제주특별자치도", "KR-49"),
-    "kr49": ("제주특별자치도", "KR-49")
+    "kr49": ("제주특별자치도", "KR-49"),
+    # 호남
+    "호남": ("호남권물류", "호남권물류CENTER-GLOBAL"),
+    "호남권물류": ("호남권물류", "호남권물류CENTER-GLOBAL"),
+    "호남권물류센터": ("호남권물류", "호남권물류CENTER-GLOBAL")
 }
 
 def standardize_region(region_input: str) -> tuple[str, str]:

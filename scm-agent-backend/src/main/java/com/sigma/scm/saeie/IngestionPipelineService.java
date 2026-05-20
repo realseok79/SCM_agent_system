@@ -26,6 +26,9 @@ public class IngestionPipelineService {
     private final BatchStatusHistoryRepository batchStatusHistoryRepository;
     private final StagingInventoryImportRepository stagingInventoryImportRepository;
     private final ExcelParseLogRepository excelParseLogRepository;
+    private final RegionInventoryRepository regionInventoryRepository;
+    private final RegionRepository regionRepository;
+    private final DailyDemandStatsRepository dailyDemandStatsRepository;
     
     private final HeaderDetector headerDetector;
     private final SemanticMapper semanticMapper;
@@ -129,15 +132,19 @@ public class IngestionPipelineService {
                 throw new IllegalArgumentException("Unsupported file format: " + ext);
             }
         } catch (Exception e) {
+            log.error("[PIPELINE] Failed to read file for batch {}: {}", batchId, e.getMessage(), e);
             transitionBatchStatus(batchId, BatchStatus.FAILED, version, BatchStatus.CREATED, changedBy, "Failed to read file: " + e.getMessage());
             Map<String, Object> res = new HashMap<>();
             res.put("batchId", batchId);
             res.put("status", BatchStatus.FAILED.name());
+            res.put("error", "Failed to read file: " + e.getMessage());
             return res;
         }
 
         // 3. 헤더 탐색 및 정제
+        log.info("[PIPELINE] Parsed {} data rows with {} original columns: {}", rows.size(), originalColumns.size(), originalColumns);
         int headerIdx = headerDetector.detectHeaderRow(rows, originalColumns, 15);
+        log.info("[PIPELINE] Header detection result: headerIdx={}", headerIdx);
         List<String> cleanColumns = new ArrayList<>();
         List<List<String>> cleanRows = new ArrayList<>();
 
@@ -158,6 +165,7 @@ public class IngestionPipelineService {
                 cleanRows = rows.subList(headerIdx + 1, rows.size());
             }
         }
+        log.info("[PIPELINE] Clean columns: {}, Clean rows count: {}", cleanColumns, cleanRows.size());
 
         // 4. 의미론적 컬럼 매핑 해결 및 드리프트 분석
         Map<String, String> mapping = new LinkedHashMap<>();
@@ -174,24 +182,31 @@ public class IngestionPipelineService {
 
             Map.Entry<String, Double> mappingResult = semanticMapper.resolveSemanticMapping(companyId, rawCol, 0.40);
             if (mappingResult != null) {
+                log.info("[PIPELINE] Column '{}' -> '{}' (confidence: {})", rawCol, mappingResult.getKey(), mappingResult.getValue());
                 mappedColsList.add(mappingResult.getKey());
                 mapping.put(rawCol, mappingResult.getKey());
             } else {
+                log.warn("[PIPELINE] Column '{}' could not be mapped to any standard column", rawCol);
                 unknownColsCount++;
                 mappedColsList.add(null);
                 mapping.put(rawCol, null);
             }
         }
 
+        log.info("[PIPELINE] Mapping result: {} | Unknown columns: {}", mapping, unknownColsCount);
+
         // 5. 드리프트 차단 검사
         double driftScore;
         try {
             driftScore = driftEngine.validateDrift(mappedColsList, unknownColsCount);
+            log.info("[PIPELINE] Drift score: {}", driftScore);
         } catch (SaeieException.HeaderDriftException e) {
+            log.error("[PIPELINE] Drift validation failed: {}", e.getMessage());
             transitionBatchStatus(batchId, BatchStatus.FAILED, version, BatchStatus.CREATED, changedBy, e.getMessage());
             Map<String, Object> res = new HashMap<>();
             res.put("batchId", batchId);
             res.put("status", BatchStatus.FAILED.name());
+            res.put("error", e.getMessage());
             return res;
         }
 
@@ -290,11 +305,58 @@ public class IngestionPipelineService {
                 reasonText = "{\"auto_approved_warnings\": true, \"warning_count\": " + warningCount + "}";
             }
 
-            transitionBatchStatus(
+            version = transitionBatchStatus(
                 batchId, BatchStatus.APPROVED, version, BatchStatus.PARSED,
                 changedBy, reasonText
             );
-            response.put("status", BatchStatus.APPROVED.name());
+            
+            // Auto-Commit logic: copy from Staging to RegionInventory
+            List<StagingInventoryImport> stagingList = stagingInventoryImportRepository.findByImportBatchId(batchId);
+            Set<String> processedRegions = new LinkedHashSet<>();
+            Set<String> newlyRegisteredRegions = new LinkedHashSet<>();
+
+            for (StagingInventoryImport staging : stagingList) {
+                if ("VALID".equals(staging.getValidationStatus())) {
+                    String rCode = staging.getRegionCode();
+                    processedRegions.add(rCode);
+                    
+                    // 1. 방어 로직: DB에 지역 코드가 없다면 자동 생성 (FK 에러 방지)
+                    if (regionRepository.findByRegionCode(rCode).isEmpty()) {
+                        com.sigma.scm.domain.Region newRegion = new com.sigma.scm.domain.Region();
+                        newRegion.setRegionCode(rCode);
+                        newRegion.setRegionName(rCode); // 이름이 없으므로 코드로 대체
+                        newRegion.setDescription("Auto-registered via Excel Upload");
+                        regionRepository.save(newRegion);
+                        newlyRegisteredRegions.add(rCode);
+                        log.info("[PIPELINE] Auto-registered missing region: {}", rCode);
+                    }
+                    
+                    // 2. 재고 반입 커밋
+                    RegionInventory inv = new RegionInventory();
+                    inv.setId(new RegionInventoryId(rCode, staging.getProductName(), staging.getDate()));
+                    inv.setQuantity(staging.getQuantity());
+                    inv.setSourceBatchId(batchId);
+                    regionInventoryRepository.save(inv);
+
+                    // 3. 일일 수요 통계 기본값 생성 (무결성 검증 통과용)
+                    DailyDemandStatsId statsId = new DailyDemandStatsId(rCode, staging.getProductName(), staging.getDate());
+                    if (dailyDemandStatsRepository.findById(statsId).isEmpty()) {
+                        DailyDemandStats stats = new DailyDemandStats();
+                        stats.setId(statsId);
+                        stats.setDailyOutboundTotal(0.0);
+                        stats.setMovingAvg30d(0.0);
+                        dailyDemandStatsRepository.save(stats);
+                    }
+                }
+            }
+            transitionBatchStatus(
+                batchId, BatchStatus.COMMITTED, version, BatchStatus.APPROVED,
+                "SYSTEM", "Idempotent auto-commit: Auto-committed APPROVED batch"
+            );
+            
+            response.put("status", BatchStatus.COMMITTED.name());
+            response.put("processedRegions", new ArrayList<>(processedRegions));
+            response.put("newlyRegisteredRegions", new ArrayList<>(newlyRegisteredRegions));
         } else if (valResult.hasCritical) {
             transitionBatchStatus(
                 batchId, BatchStatus.FAILED, version, BatchStatus.PARSED,
@@ -329,43 +391,63 @@ public class IngestionPipelineService {
 
     private void parseExcel(InputStream is, List<String> originalColumns, List<List<String>> rows) throws Exception {
         try (Workbook workbook = WorkbookFactory.create(is)) {
-            Sheet sheet = workbook.getSheetAt(0);
-            Iterator<Row> rowIterator = sheet.rowIterator();
+            int sheetCount = workbook.getNumberOfSheets();
+            log.info("[PIPELINE] Workbook has {} sheet(s)", sheetCount);
+
+            // Required SCM columns for scoring each sheet
+            Set<String> requiredStdCols = Set.of("region_code", "product_name", "date", "quantity");
+
+            int bestSheetIdx = 0;
+            int bestScore = -1;
+
+            // Scan all sheets to find the one with the best SCM column match
+            for (int s = 0; s < sheetCount; s++) {
+                Sheet sheet = workbook.getSheetAt(s);
+                if (sheet.getPhysicalNumberOfRows() == 0) continue;
+
+                Row firstRow = sheet.getRow(sheet.getFirstRowNum());
+                if (firstRow == null) continue;
+
+                int score = 0;
+                for (int i = 0; i < firstRow.getLastCellNum(); i++) {
+                    Cell cell = firstRow.getCell(i, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                    String val = HeaderDetector.cleanValue(getCellValueAsString(cell));
+                    if (val.isEmpty()) continue;
+
+                    for (Map.Entry<String, List<String>> entry : HeaderDetector.COLUMN_ALIASES.entrySet()) {
+                        if (requiredStdCols.contains(entry.getKey()) && entry.getValue().contains(val)) {
+                            score += 10; // Required column match = high score
+                            break;
+                        } else if (entry.getValue().contains(val)) {
+                            score += 1; // Optional column match = low score
+                            break;
+                        }
+                    }
+                }
+
+                log.info("[PIPELINE] Sheet '{}' (idx={}) column match score: {}", sheet.getSheetName(), s, score);
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestSheetIdx = s;
+                }
+            }
+
+            Sheet selectedSheet = workbook.getSheetAt(bestSheetIdx);
+            log.info("[PIPELINE] Selected sheet '{}' (idx={}) with best score {}", 
+                    selectedSheet.getSheetName(), bestSheetIdx, bestScore);
+
+            // Parse the selected sheet
+            Iterator<Row> rowIterator = selectedSheet.rowIterator();
             boolean firstLine = true;
 
             while (rowIterator.hasNext()) {
                 Row row = rowIterator.next();
                 List<String> rowList = new ArrayList<>();
                 
-                // Read all cells sequentially
                 for (int i = 0; i < row.getLastCellNum(); i++) {
                     Cell cell = row.getCell(i, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                    String val = "";
-                    switch (cell.getCellType()) {
-                        case STRING -> val = cell.getStringCellValue();
-                        case NUMERIC -> {
-                            if (DateUtil.isCellDateFormatted(cell)) {
-                                val = cell.getLocalDateTimeCellValue().toString();
-                            } else {
-                                double d = cell.getNumericCellValue();
-                                if (d == (long) d) {
-                                    val = String.valueOf((long) d);
-                                } else {
-                                    val = String.valueOf(d);
-                                }
-                            }
-                        }
-                        case BOOLEAN -> val = String.valueOf(cell.getBooleanCellValue());
-                        case FORMULA -> {
-                            try {
-                                val = cell.getStringCellValue();
-                            } catch (Exception e) {
-                                val = String.valueOf(cell.getNumericCellValue());
-                            }
-                        }
-                        default -> val = "";
-                    }
-                    rowList.add(val);
+                    rowList.add(getCellValueAsString(cell));
                 }
 
                 if (firstLine) {
@@ -376,6 +458,34 @@ public class IngestionPipelineService {
                 }
             }
         }
+    }
+
+    private String getCellValueAsString(Cell cell) {
+        if (cell == null) return "";
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue();
+            case NUMERIC -> {
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    yield cell.getLocalDateTimeCellValue().toString();
+                } else {
+                    double d = cell.getNumericCellValue();
+                    if (d == (long) d) {
+                        yield String.valueOf((long) d);
+                    } else {
+                        yield String.valueOf(d);
+                    }
+                }
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> {
+                try {
+                    yield cell.getStringCellValue();
+                } catch (Exception e) {
+                    yield String.valueOf(cell.getNumericCellValue());
+                }
+            }
+            default -> "";
+        };
     }
 
     private String calculateSha256(byte[] bytes) throws Exception {

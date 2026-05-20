@@ -24,6 +24,10 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:dummy-key-for-local-boot} # 환경변수로부터 키 로딩, 없으면 Fallback 작동
+
 # SCM 중앙 비즈니스 가드레일 설정 (agents/config.py 변환)
 scm:
   guardrails:
@@ -32,10 +36,4 @@ scm:
   simulation:
     days: 100
     speed-seconds: 300.0
-  analysis-service-url: http://localhost:8090
-
-# OpenAI & Spring AI 설정 (LLM 모듈용)
-spring:
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:} # 환경변수로부터 키 로딩, 없으면 Fallback 작동
+  analysis-service-url: ${ANALYSIS_SERVICE_URL:http://localhost:8090}
