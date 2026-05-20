@@ -320,8 +320,8 @@ def render_risk_dashboard():
         risk = auth_helper.api_get(f"/api/dashboard/region/{code}/risk-score")
         if risk:
             level = risk.get("riskLevel", "LOW")
-            color = "#f28b82" if "HIGH".equals(level) else "#81c995"
-            bg_color = "#f28b820f" if "HIGH".equals(level) else "#81c9950f"
+            color = "#f28b82" if level == "HIGH" else "#81c995"
+            bg_color = "#f28b820f" if level == "HIGH" else "#81c9950f"
             
             st.markdown(f"""
             <div class="ep" style="border-left-color: {color}; background-color: {bg_color}; padding: 12px; margin-bottom: 8px;">

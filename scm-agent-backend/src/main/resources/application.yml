@@ -1,0 +1,41 @@
+spring:
+  profiles:
+    active: dev # 기본적으로 개발 프로파일(dev) 활성화
+  application:
+    name: scm-agent-backend
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/scm_enterprise}
+    username: ${DB_USERNAME:scm_admin}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # Flyway를 통한 마이그레이션이 중심이므로 validate 모드로 지정
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        show_sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+
+# SCM 중앙 비즈니스 가드레일 설정 (agents/config.py 변환)
+scm:
+  guardrails:
+    max-order-ceiling-ratio: 3.0
+    absolute-max-capacity: 5000.0
+  simulation:
+    days: 100
+    speed-seconds: 300.0
+  analysis-service-url: http://localhost:8090
+
+# OpenAI & Spring AI 설정 (LLM 모듈용)
+spring:
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:} # 환경변수로부터 키 로딩, 없으면 Fallback 작동

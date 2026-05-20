@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scm-postgres
+    environment:
+      POSTGRES_DB: scm_enterprise
+      POSTGRES_USER: scm_admin
+      POSTGRES_PASSWORD: scm_secret_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scm_admin -d scm_enterprise"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scm-network
+
+  analysis-service:
+    build:
+      context: ./analysis-microservice
+      dockerfile: Dockerfile
+    ports:
+      - "8090" # 호스트 포트는 자동 할당하여 스케일(scale) 충돌 방지
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - scm-network
+
+  scm-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scm-backend-app
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      analysis-service:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/scm_enterprise
+      SPRING_DATASOURCE_USERNAME: scm_admin
+      SPRING_DATASOURCE_PASSWORD: scm_secret_password
+      ANALYSIS_SERVICE_URL: http://analysis-service:8090
+    networks:
+      - scm-network
+
+volumes:
+  pgdata:
+
+networks:
+  scm-network:
+    driver: bridge

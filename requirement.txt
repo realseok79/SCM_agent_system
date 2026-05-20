@@ -1,0 +1,19 @@
+# 데이터 처리
+numpy
+pandas
+scipy          # 확률 분포 (poisson, normal)
+
+# 에이전트 / API
+flask          # Mock API 서버
+requests       # 에이전트 간 HTTP 통신
+
+# TDD
+pytest
+pytest-cov     # 커버리지 80% 측정용
+
+# 시각화
+streamlit
+matplotlib
+
+# 환경 변수
+python-dotenv

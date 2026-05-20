@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+numpy
+scipy
+pandas
+yfinance
+fredapi
+requests
+python-dotenv
