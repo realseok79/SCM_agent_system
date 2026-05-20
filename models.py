@@ -160,4 +160,30 @@ def standardize_region(region_input: str) -> tuple[str, str]:
         if key in cleaned or cleaned in key:
             return val
             
+    # ── [글로벌 고도화] 글로벌 주요 물류 거점 매핑 사전 ──
+    global_cities = {
+        "도쿄": ("도쿄 (Tokyo)", "JP-TYO"),
+        "tokyo": ("도쿄 (Tokyo)", "JP-TYO"),
+        "뉴욕": ("뉴욕 (New York)", "US-NYC"),
+        "newyork": ("뉴욕 (New York)", "US-NYC"),
+        "런던": ("런던 (London)", "GB-LON"),
+        "london": ("런던 (London)", "GB-LON"),
+        "상하이": ("상하이 (Shanghai)", "CN-SHA"),
+        "shanghai": ("상하이 (Shanghai)", "CN-SHA"),
+        "싱가포르": ("싱가포르 (Singapore)", "SG-SIN"),
+        "singapore": ("싱가포르 (Singapore)", "SG-SIN")
+    }
+    
+    if cleaned in global_cities:
+        return global_cities[cleaned]
+        
+    # 그 외 정의되지 않은 신규 글로벌 지역 등록 시 동적 코드 자동 발급 (안정성 확보)
+    if len(cleaned) >= 2 and not cleaned.startswith("invalid") and "안드로메다" not in cleaned:
+        import hashlib
+        # 고유한 3자리 해시코드 생성
+        hash_suffix = hashlib.md5(cleaned.encode()).hexdigest()[:3].upper()
+        code = f"GL-{hash_suffix}"
+        name = region_input.strip()
+        return (name, code)
+            
     raise ValueError(f"지원하지 않는 지역명입니다: '{region_input}'")

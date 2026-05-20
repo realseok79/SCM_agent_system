@@ -7,6 +7,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from db import get_db_connection
 from utils.weather_connector import get_weather_for_region, REGION_WEATHER_META
 from utils.logger import get_logger
+from utils.state_manager import load_lkv
+from utils.scoring_engine import LogisticsRiskScorer
+from agents.llm_diagnoser import generate_action_plan
 
 logger = get_logger("SCM_Scheduler")
 
@@ -63,6 +66,103 @@ def daily_weather_batch(force_refresh: bool = False):
     conn.close()
     logger.info(f"🏁 [일일 배치 종료] 성공: {success_count}건, 실패: {fail_count}건 (기준일: {today_str})")
 
+def daily_llm_insight_batch():
+    """
+    각 등록된 지점의 리스크 값을 계산하고, LLM Diagnoser를 통해 한 줄 처방(Action Plan)을 생성하여 DB에 캐싱하는 배치 작업.
+    """
+    logger.info("🤖 [AI 처방 배치 시작] SCM AI 처방 및 캐시 갱신 시작...")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT region_name, region_code FROM regions")
+        regions = cursor.fetchall()
+    except Exception as e:
+        logger.error(f"❌ 지역 목록 조회 실패: {e}")
+        conn.close()
+        return
+        
+    if not regions:
+        logger.warning("⚠️ 등록된 지역이 없습니다. AI 처방 배치를 스킵합니다.")
+        conn.close()
+        return
+        
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    lkv_state = load_lkv()
+    
+    success_count = 0
+    fail_count = 0
+    
+    for r in regions:
+        r_name = r["region_name"]
+        r_code = r["region_code"]
+        logger.info(f"Processing AI Action Plan for {r_name} ({r_code})...")
+        
+        # 국가 매핑
+        code_upper = str(r_code).upper()
+        if code_upper.startswith("KR-"):
+            country = "South Korea"
+        elif code_upper.startswith("US-"):
+            country = "United States"
+        elif code_upper.startswith("CN-"):
+            country = "China"
+        elif code_upper.startswith("JP-"):
+            country = "Japan"
+        elif code_upper.startswith("GB-"):
+            country = "United Kingdom"
+        else:
+            country = "South Korea"
+            
+        country_data = lkv_state.get(country, {})
+        raw_weather = country_data.get("weather", "[Fallback] 대체 기상 정보")
+        data_vector = country_data.get("macro", {"oil_change_pct": 0.0, "inflation_rate": 2.0, "index_change_pct": 0.0, "fx_change_pct": 0.0})
+        gdelt_info = country_data.get("gdelt", {"average_tone": 0.0, "risk_level": "Low", "top_headline": "Fallback Mode"})
+        trend_info = country_data.get("trends", {"composite_score": 0.0, "matched_count": 0})
+        
+        try:
+            # 1. 리스크 스코어 계산
+            scorer = LogisticsRiskScorer()
+            scm_metrics = scorer.score_all(
+                data_vector=data_vector,
+                weather_text=raw_weather,
+                trend_score=trend_info.get("composite_score", 0.0),
+                gdelt_tone=gdelt_info.get("average_tone", 0.0)
+            )
+            
+            lt_delay = scm_metrics["lead_time_delay"]
+            ds = scm_metrics["demand_shock_index"]
+            action_code = scm_metrics["decision_action_code"]
+            base_message = scm_metrics["decision_message"]
+            
+            # 2. LLM 처방 텍스트 생성
+            action_plan_msg = generate_action_plan(
+                region_name=r_name,
+                product_name="종합 품목",
+                delay_days=lt_delay,
+                demand_shock=ds,
+                action_code=action_code,
+                base_message=base_message
+            )
+            
+            # 3. DB에 UPSERT 적재
+            cursor.execute("""
+                INSERT INTO regional_insights (region_code, date, action_plan_msg, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(region_code, date) DO UPDATE SET
+                    action_plan_msg = excluded.action_plan_msg,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (r_code, today_str, action_plan_msg))
+            conn.commit()
+            
+            logger.info(f"  ✅ {r_name} SCM AI 처방 업데이트 완료")
+            success_count += 1
+        except Exception as e:
+            logger.error(f"  ❌ {r_name} SCM AI 처방 업데이트 실패: {e}")
+            fail_count += 1
+            
+    conn.close()
+    logger.info(f"🏁 [AI 처방 배치 종료] 성공: {success_count}건, 실패: {fail_count}건 (기준일: {today_str})")
+
 def start_scheduler():
     """
     백그라운드 스케줄러를 시작합니다.
@@ -71,7 +171,7 @@ def start_scheduler():
     """
     scheduler = BackgroundScheduler()
     
-    # 매일 06:00 AM 실행 크론 설정
+    # 매일 06:00 AM 실행 크론 설정 (기상 데이터 동기화)
     scheduler.add_job(
         daily_weather_batch,
         trigger='cron',
@@ -81,11 +181,22 @@ def start_scheduler():
         replace_existing=True
     )
     
+    # 매일 06:05 AM 실행 크론 설정 (AI 처방 갱신)
+    scheduler.add_job(
+        daily_llm_insight_batch,
+        trigger='cron',
+        hour=6,
+        minute=5,
+        id='daily_llm_insight_job',
+        replace_existing=True
+    )
+    
     scheduler.start()
     logger.info("⏰ APScheduler 백그라운드 스케줄러가 성공적으로 가동되었습니다. (일일 배치: 매일 오전 6시)")
     
     # 최초 기동 시 비동기로 1회 강제 실행 (캐시 초기화)
     daily_weather_batch(force_refresh=False)
+    daily_llm_insight_batch()
     
     return scheduler
 

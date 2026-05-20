@@ -9,13 +9,20 @@ from agents.analysis_agent import AnalysisAgent
 from agents.action_agent import ActionAgent
 from utils.logger import get_logger
 
+from db import init_db, seed_initial_data
+
 load_dotenv()
 logger = get_logger("SimulatorCore")
+
+# Clone 직후에도 안전하게 DB 초기화 및 시드 데이터 적재
+init_db()
+seed_initial_data()
 
 # 에이전트 인스턴스 싱글톤 유지 (상태/히스토리 보존)
 data_agent = DataAgent()
 analysis_agent = AnalysisAgent()
 action_agent = ActionAgent()
+
 
 # ── [고도화] 가상 창고 물리 엔진 상태 변수 선언 ──────────────────────
 current_stock = 1500.0  # 초기 재고 상태 (안전 자산 수준에서 시작)

@@ -42,7 +42,10 @@ def get_active_countries():
     return list(countries) if countries else ["South Korea"]
 
 
+_keep_running = True
+
 def run_worker():
+    global _keep_running
     print("🚀 [Background Worker] 가동 시작...")
     macro_engine = GlobalMacroEngine()
     issue_tracker = GlobalIssueTracker()
@@ -53,7 +56,7 @@ def run_worker():
     except Exception as e:
         print(f"⚠️ [DataAgent 초기화 실패]: {e}")
         data_agent = None
-
+ 
     # 기상 관측소 매핑 (간소화)
     station_map = {
         "South Korea": {"id": "47159", "name": "Busan", "lat": 35.1017, "lon": 129.03},
@@ -62,8 +65,8 @@ def run_worker():
         "Japan": {"id": "47662", "name": "Tokyo", "lat": 35.6895, "lon": 139.6917},
         "United Kingdom": {"id": "03772", "name": "London", "lat": 51.5074, "lon": -0.1278},
     }
-
-    while True:
+ 
+    while _keep_running:
         print(f"\n🕒 [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 데이터 수집 사이클 시작...")
         state = load_lkv()
         
