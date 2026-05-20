@@ -16,6 +16,7 @@ import java.util.Map;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final com.sigma.scm.service.CrossDockingService crossDockingService;
 
     @GetMapping("/summary")
     public ResponseEntity<Map<String, Object>> getSummary() {
@@ -63,5 +64,19 @@ public class DashboardController {
     @GetMapping("/rebalancing-orders")
     public ResponseEntity<List<com.sigma.scm.domain.InventoryRebalancingOrder>> getRebalancingOrders() {
         return ResponseEntity.ok(dashboardService.getRebalancingOrders());
+    }
+
+    @PostMapping("/rebalancing-orders")
+    public ResponseEntity<com.sigma.scm.domain.InventoryRebalancingOrder> createRebalancingOrder(
+            @RequestBody com.sigma.scm.domain.InventoryRebalancingOrder order) {
+        return ResponseEntity.ok(dashboardService.createRebalancingOrder(order));
+    }
+
+    @PostMapping("/rebalance")
+    public ResponseEntity<com.sigma.scm.service.CrossDockingService.RebalanceResult> attemptRebalancing(
+            @RequestBody Map<String, Object> payload) {
+        String productName = (String) payload.get("productName");
+        double requiredQty = ((Number) payload.get("requiredQty")).doubleValue();
+        return ResponseEntity.ok(crossDockingService.attemptCrossDocking(productName, requiredQty));
     }
 }

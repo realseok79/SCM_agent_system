@@ -86,3 +86,31 @@ scm-agent-system/
 ├── main.py              # 시뮬레이션 진입점
 └── requirements.txt     # Python 의존성 목록
 ```
+
+---
+
+## 📊 M5 Forecasting Dataset 및 데이터 격리 설정
+
+본 SCM 에이전트 시스템 시뮬레이션 및 백테스팅 엔진은 Kaggle의 **M5 Forecasting Competition** 데이터셋을 기본 데이터 소스로 사용합니다.
+
+### 1. 데이터셋 다운로드
+아래 원본 데이터 파일들을 [Kaggle M5 Forecasting Competition 페이지](https://www.kaggle.com/c/m5-forecasting-accuracy/data)에서 다운로드해 주세요.
+* `sales_train_evaluation.csv`
+* `sales_train_validation.csv`
+* `sell_prices.csv`
+* `calendar.csv`
+* `sample_submission.csv`
+
+### 2. 데이터 격리 보관 (`data/raw/` 폴더)
+프로젝트 저장소 용량 최소화 및 보안 격리를 위하여 대용량 CSV 파일들은 루트의 `data/raw/` 경로에 배치해야 합니다.
+
+```bash
+# 프로젝트 루트에 data/raw 디렉토리 생성
+mkdir -p data/raw
+
+# 다운로드한 대용량 CSV 파일들을 data/raw 경로로 이동
+mv calendar.csv sales_train_evaluation.csv sales_train_validation.csv sample_submission.csv sell_prices.csv data/raw/
+```
+
+> **주의**: `data/` 및 `*.csv` 파일들은 Git 추적 대상에서 기본적으로 제외(`.gitignore` 등록)되어 있으므로, 원격 저장소에 대용량 데이터가 커밋될 위험이 없습니다.
+

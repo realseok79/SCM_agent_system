@@ -68,4 +68,45 @@ public class CrossDockingServiceTest {
 
         verify(rebalancingOrderRepository, times(1)).save(any(InventoryRebalancingOrder.class));
     }
+
+    @Test
+    public void testCrossDockingNoCandidates() {
+        String productName = "Mask";
+        String maxDate = "2026-05-19";
+
+        when(regionInventoryRepository.findMaxDate()).thenReturn(maxDate);
+        when(regionInventoryRepository.findCrossDockingCandidates(productName, maxDate)).thenReturn(new ArrayList<>());
+
+        CrossDockingService.RebalanceResult result = crossDockingService.attemptCrossDocking(productName, 50.0);
+
+        assertEquals(0.0, result.getRebalancedQty());
+        assertEquals(50.0, result.getRemainingPoQty());
+        assertTrue(result.getTransfers().isEmpty());
+    }
+
+    @Test
+    public void testCrossDockingSurplusLimit() {
+        String productName = "Mask";
+        String maxDate = "2026-05-19";
+
+        when(regionInventoryRepository.findMaxDate()).thenReturn(maxDate);
+
+        // quantity=1000.0, movingAvg30d=10.0 -> DoS=100 days. Surplus above 90 days = 1000 - 900 = 100.
+        List<Object[]> candidates = new ArrayList<>();
+        candidates.add(new Object[]{"US", 1000.0, 10.0});
+        when(regionInventoryRepository.findCrossDockingCandidates(productName, maxDate)).thenReturn(candidates);
+
+        ProductFinancialMaster fin = new ProductFinancialMaster();
+        fin.setProductName(productName);
+        fin.setUnitPrice(500);
+        when(productFinancialMasterRepository.findById(productName)).thenReturn(Optional.of(fin));
+
+        // Request 150, but surplus is only 100
+        CrossDockingService.RebalanceResult result = crossDockingService.attemptCrossDocking(productName, 150.0);
+
+        assertEquals(100.0, result.getRebalancedQty());
+        assertEquals(50.0, result.getRemainingPoQty());
+        assertEquals(1, result.getTransfers().size());
+        assertEquals(100, result.getTransfers().get(0).getTransferQty());
+    }
 }

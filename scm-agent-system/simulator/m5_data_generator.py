@@ -17,7 +17,19 @@ class M5DataGenerator:
     """
     Walmart 30,490개 SKU 전체의 과거 백테스팅 데이터를 제공하는 고성능 벡터화 제너레이터
     """
-    def __init__(self, data_dir="/Users/leejinseok/Desktop/scm_agent_system"):
+    def __init__(self, data_dir=None):
+        if data_dir is None:
+            potential_dirs = [
+                "/Users/leejinseok/Desktop/scm_agent_system/data/raw",
+                "/Users/leejinseok/Desktop/scm_agent_system"
+            ]
+            for p in potential_dirs:
+                if os.path.exists(os.path.join(p, "sales_train_evaluation.csv")):
+                    data_dir = p
+                    break
+            if data_dir is None:
+                data_dir = "/Users/leejinseok/Desktop/scm_agent_system/data/raw"
+                
         self.data_dir = data_dir
         self.sales_path = os.path.join(data_dir, "sales_train_evaluation.csv")
         self.calendar_path = os.path.join(data_dir, "calendar.csv")

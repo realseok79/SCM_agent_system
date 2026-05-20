@@ -46,3 +46,20 @@ def test_lru_cache_hit_verification():
     """lru_cache 히트 최적화 경로 검증을 위해 동일 문자열을 2번 호출하여 커버리지 확보"""
     assert canonicalize_header("region") == "region"
     assert canonicalize_header("region") == "region"
+
+def test_multilingual_embedding_mapping():
+    """비정규 또는 미등록 한국어 헤더 '물품수량'과 '입고날짜'가 임계값 0.55 이상으로 정상 매핑되는지 검증"""
+    # 1. '물품수량' -> 'quantity'
+    col_qty, conf_qty = resolve_semantic_mapping(None, "COMP-A", "물품수량", min_threshold=0.55)
+    assert col_qty == "quantity"
+    assert conf_qty >= 0.55
+    
+    # 2. '입고날짜' -> 'date'
+    col_date, conf_date = resolve_semantic_mapping(None, "COMP-A", "입고날짜", min_threshold=0.55)
+    assert col_date == "date"
+    assert conf_date >= 0.55
+    
+    # 3. '담당자이름' -> 매핑 제외 (None)
+    col_none, conf_none = resolve_semantic_mapping(None, "COMP-A", "담당자이름", min_threshold=0.55)
+    assert col_none is None
+    assert conf_none == 0.0

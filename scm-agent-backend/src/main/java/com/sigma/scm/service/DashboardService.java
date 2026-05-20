@@ -30,7 +30,7 @@ public class DashboardService {
         long totalRegions = regionRepository.count();
         List<RegionInventory> inventories = regionInventoryRepository.findAll();
         double totalStock = inventories.stream().mapToDouble(RegionInventory::getQuantity).sum();
-        
+
         long totalStockOutIncidents = stockOutLogRepository.count();
 
         summary.put("totalRegions", totalRegions);
@@ -44,12 +44,11 @@ public class DashboardService {
     public List<Map<String, Object>> getStockTrend() {
         // 날짜별 재고 총량 집계
         List<RegionInventory> inventories = regionInventoryRepository.findAll();
-        
+
         Map<String, Double> dateStockMap = inventories.stream()
                 .collect(Collectors.groupingBy(
                         inv -> inv.getId().getDate(),
-                        Collectors.summingDouble(RegionInventory::getQuantity)
-                ));
+                        Collectors.summingDouble(RegionInventory::getQuantity)));
 
         return dateStockMap.entrySet().stream()
                 .map(entry -> {
@@ -77,7 +76,7 @@ public class DashboardService {
 
     public Map<String, Object> getIntegrity(String regionCode, String productName, String date) {
         Map<String, Object> integrityResult = new HashMap<>();
-        
+
         // daily_demand_stats와 region_inventory 비교를 통해 데이터 무결성 체크
         List<RegionInventory> inventories = regionInventoryRepository.findByIdRegionCodeAndIdDate(regionCode, date);
         List<DailyDemandStats> demandStats = dailyDemandStatsRepository.findByIdRegionCode(regionCode).stream()
@@ -106,13 +105,12 @@ public class DashboardService {
 
     public Map<String, Object> getRiskScore(String regionCode) {
         Map<String, Object> riskResult = new HashMap<>();
-        
+
         // 날씨와 최근 출고 이력을 이용해 물류 위험도 평가
         List<WeatherCache> weather = weatherCacheRepository.findByIdRegionCode(regionCode);
-        boolean severeWeather = weather.stream().anyMatch(w -> 
-                w.getTemp() != null && (w.getTemp() > 38.0 || w.getTemp() < -15.0) ||
-                w.getPrecipitation() != null && w.getPrecipitation() > 50.0
-        );
+        boolean severeWeather = weather.stream()
+                .anyMatch(w -> w.getTemp() != null && (w.getTemp() > 38.0 || w.getTemp() < -15.0) ||
+                        w.getPrecipitation() != null && w.getPrecipitation() > 50.0);
 
         double score = severeWeather ? 85.0 : 25.0; // 날씨 위험 감지 시 85점 부여
         String riskLevel = score >= 60.0 ? "HIGH" : "LOW";
@@ -128,7 +126,7 @@ public class DashboardService {
     public List<Map<String, Object>> getAging(String regionCode) {
         // 재고 연령(Date가 오래된 순)별 통계
         List<RegionInventory> inventories = regionInventoryRepository.findByIdRegionCode(regionCode);
-        
+
         return inventories.stream()
                 .map(inv -> {
                     Map<String, Object> map = new HashMap<>();
@@ -143,5 +141,16 @@ public class DashboardService {
 
     public List<InventoryRebalancingOrder> getRebalancingOrders() {
         return rebalancingOrderRepository.findAll();
+    }
+
+    @Transactional
+    public InventoryRebalancingOrder createRebalancingOrder(InventoryRebalancingOrder order) {
+        if (order.getStatus() == null) {
+            order.setStatus("APPROVED");
+        }
+        if (order.getCreatedAt() == null) {
+            order.setCreatedAt(java.time.LocalDateTime.now());
+        }
+        return rebalancingOrderRepository.save(order);
     }
 }
