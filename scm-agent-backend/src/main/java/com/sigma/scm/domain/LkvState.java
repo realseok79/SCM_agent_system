@@ -6,8 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -20,7 +18,7 @@ public class LkvState {
     @EmbeddedId
     private LkvStateId id;
 
-    @JdbcTypeCode(SqlTypes.JSON)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     @Column(name = "state_data", nullable = false, columnDefinition = "jsonb")
     private String stateData = "{}";
 

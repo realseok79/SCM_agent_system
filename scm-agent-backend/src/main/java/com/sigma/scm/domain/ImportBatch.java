@@ -37,6 +37,8 @@ public class ImportBatch {
     @Column(name = "quality_score")
     private Double qualityScore;
 
+    // @Lob is removed because Hibernate 6 maps @Lob to PostgreSQL 'oid' instead of 'bytea'.
+    // A simple byte[] automatically maps to 'bytea' correctly in Hibernate 6.
     @Column(name = "validated_payload_snapshot")
     private byte[] validatedPayloadSnapshot;
 

@@ -82,6 +82,10 @@ class DataAgent:
         self.last_processed_day: int = -1  # [추가] 중복 누적 방지용 일자 추적 필드
         self._gdelt_tracker = GlobalIssueTracker()
         
+        # ── [오버헤드 방지] 실시간 시뮬레이션 캐시 레이어 도입 ──
+        self._cached_gdelt = None
+        self._cached_trend = None
+        
         # Pytrends 설정 및 키워드 가중치 로드
         try:
             self._pytrends = TrendReq(hl='ko', tz=540)
@@ -104,8 +108,11 @@ class DataAgent:
         data_config.py의 키워드 매트릭스를 기반으로
         Google Trends에서 급상승 키워드를 수집하고
         get_demand_impact_score()로 가중 충격 지수를 반환합니다.
-        API 429 에러 등 실패 시 시뮬레이션 폴백 제공.
+        [성능 개선] 단일 실행 주기 내에서는 Google Trends API 호출 결과를 캐싱하여 429 레이트 리밋과 지연(Lag)을 방지합니다.
         """
+        if getattr(self, "_cached_trend", None) is not None:
+            return self._cached_trend
+
         sample_keywords = ["물류 파업", "마스크", "금리 인상", "반도체 공급 부족", "유가 폭등"]
         try:
             if self._pytrends is None:
@@ -113,13 +120,16 @@ class DataAgent:
             self._pytrends.build_payload(sample_keywords, timeframe='today 1-m', geo='KR')
             df = self._pytrends.interest_over_time()
             if df.empty:
-                return {"composite_score": 0.0, "matched_count": 0}
-            
-            trending = [kw for kw in sample_keywords if df[kw].tail(7).mean() > 50]
-            return get_demand_impact_score(trending, self._weight_map)
+                res = {"composite_score": 0.0, "matched_count": 0}
+            else:
+                trending = [kw for kw in sample_keywords if df[kw].tail(7).mean() > 50]
+                res = get_demand_impact_score(trending, self._weight_map)
         except Exception as e:
-            logger.debug(f"Google Trends 수집 폴백 작동: {e}")
-            return {"composite_score": 0.0, "matched_count": 0}
+            logger.debug(f"Google Trends 수집 폴백 작동 (캐시 대체): {e}")
+            res = {"composite_score": 0.0, "matched_count": 0}
+            
+        self._cached_trend = res
+        return res
 
     def _fetch_external_signals(self, day: int) -> dict:
         """Mock API 서버에서 가상 시점(day)에 동기화된 외부 신호 수집"""
@@ -208,8 +218,10 @@ class DataAgent:
             final_lead_time *= stress_event.get("lead_time_multiplier", 1.0)
             logger.warning(f"⚠️ [{day}일차] 스트레스 주입 완료: 수요 {final_demand:.0f} / 조달 {final_lead_time:.1f}일")
 
-        # 6. GDELT 공급망 리스크 스캔
-        gdelt_data = self._gdelt_tracker.fetch_supply_chain_risk_tone()
+        # 6. GDELT 공급망 리스크 스캔 (성능 최적화 캐시 레이어 적용)
+        if getattr(self, "_cached_gdelt", None) is None:
+            self._cached_gdelt = self._gdelt_tracker.fetch_supply_chain_risk_tone()
+        gdelt_data = self._cached_gdelt
 
         # 7. Google Trends 수요 리스크 스캔
         trend_signal = self._fetch_trend_signal()

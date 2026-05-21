@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────
+# SCM Agent System v3 - Docker Compose 최종 통합 구성
+# 서비스 구성: PostgreSQL → Spring Boot 백엔드 → Streamlit 프론트엔드
+# ─────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+  # ── 1. PostgreSQL 데이터베이스 ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: scm-postgres
+    environment:
+      POSTGRES_DB: scm_enterprise
+      POSTGRES_USER: scm_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-scm_secure_2026}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scm_admin -d scm_enterprise"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - scm-network
+
+  # ── 2. Spring Boot 백엔드 (Java 17) ──
+  backend:
+    build:
+      context: ./scm-agent-backend
+      dockerfile: Dockerfile
+    container_name: scm-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/scm_enterprise
+      DB_USERNAME: scm_admin
+      DB_PASSWORD: ${DB_PASSWORD:-scm_secure_2026}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      SPRING_PROFILES_ACTIVE: dev
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - scm-network
+
+  # ── 3. Streamlit 프론트엔드 (Python 3.11) ──
+  frontend:
+    build:
+      context: .
+      dockerfile: ./scm-agent-system/Dockerfile
+    container_name: scm-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:8080
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8501:8501"
+    networks:
+      - scm-network
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  scm-network:
+    driver: bridge
