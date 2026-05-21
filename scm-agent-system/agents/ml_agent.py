@@ -373,19 +373,56 @@ class PredictDemandResponse(BaseModel):
     shap_values: Dict[str, float]
     model_version: str
 
+_tft_model = None
+
+def get_tft_model():
+    global _tft_model
+    if _tft_model is None:
+        from utils.ml.tft_network import TemporalFusionTransformer
+        _tft_model = TemporalFusionTransformer(num_features=1, d_model=16, num_heads=2, horizon=7)
+        import os
+        import torch
+        # 사전 훈련된 모델 로드 시도
+        model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../outputs/global_base_model.pt"))
+        if os.path.exists(model_path):
+            try:
+                _tft_model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+                logger.info("🧠 Pre-trained TFT Global model loaded successfully from outputs.")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load TFT state dict: {e}. Using initialized base model.")
+        else:
+            logger.info("💡 No pre-trained TFT model checkpoint found. Using initialized base model.")
+    return _tft_model
+
 @router.post("/predict-demand-hybrid", response_model=PredictDemandResponse)
 def predict_demand_hybrid(req: PredictDemandRequest):
     """
     TFT (Temporal Fusion Transformer) 및 비대칭 핀볼 손실 분위수(Quantile Loss)를 활용한 수요 분포 예측 및 SHAP 기여도 산출
     """
+    import torch
     sales_qtys = [s.qty for s in req.recent_sales]
-    avg_sales = np.mean(sales_qtys) if sales_qtys else 10.0
-    std_sales = np.std(sales_qtys) if len(sales_qtys) > 1 else 2.0
     
-    # 90% quantile 예측 (안전 마진 z=1.28 반영)
-    predicted_50 = avg_sales
-    predicted_10 = max(0.0, avg_sales - 1.28 * std_sales)
-    predicted_90 = avg_sales + 1.28 * std_sales
+    # ── [TFT 실시간 추론 연산] 45일치 인입 데이터 텐서 매핑 ──
+    # 최소 윈도우 30일 패딩 적용
+    if len(sales_qtys) < 30:
+        avg = np.mean(sales_qtys) if sales_qtys else 10.0
+        sales_qtys = [avg] * (30 - len(sales_qtys)) + sales_qtys
+        
+    sales_qtys = sales_qtys[-30:]  # 최신 30일 데이터 슬라이싱
+    
+    # [1, 30, 1] 3차원 텐서 변환
+    x_tensor = torch.tensor(sales_qtys, dtype=torch.float32).view(1, 30, 1)
+    
+    model = get_tft_model()
+    model.eval()
+    with torch.no_grad():
+        # 순전파 (Forward Propagation)
+        out, weights = model(x_tensor)  # out: [1, 7, 3], weights: [1, 30, 1]
+        
+    # 분위수별 평균 예측값 산출
+    predicted_10 = float(out[0, :, 0].mean().item())
+    predicted_50 = float(out[0, :, 1].mean().item())
+    predicted_90 = float(out[0, :, 2].mean().item())
     
     # 공휴일 이벤트 영향 보정 (Chuseok/Seollal 등)
     holiday_effect = 0.0
@@ -393,15 +430,16 @@ def predict_demand_hybrid(req: PredictDemandRequest):
         if event.is_holiday:
             holiday_effect += 0.20  # +20% 가산
             
-    predicted_50 *= (1.0 + holiday_effect)
-    predicted_90 *= (1.0 + holiday_effect)
-    predicted_10 *= (1.0 + holiday_effect)
+    predicted_10 = max(0.0, predicted_10 * (1.0 + holiday_effect))
+    predicted_50 = max(0.0, predicted_50 * (1.0 + holiday_effect))
+    predicted_90 = max(0.0, predicted_90 * (1.0 + holiday_effect))
     
-    # SHAP Value 계산 (공휴일 유무 및 과거 추세에 따른 가중 기여도 모의)
+    # SHAP Value 계산 (VSN 가중치 기여도를 기반으로 산출)
+    vsn_weights = weights[0].mean(dim=0).tolist() if weights is not None else [0.2] * 30
     shap_values = {
-        "lag_1": round(float(0.42), 2),
+        "lag_1": round(float(vsn_weights[-1] if len(vsn_weights) > 0 else 0.42), 2),
         "is_holiday": round(float(holiday_effect), 2),
-        "rolling_mean_7": round(float(0.18), 2)
+        "rolling_mean_7": round(float(np.mean(vsn_weights[-7:]) if len(vsn_weights) >= 7 else 0.18), 2)
     }
     
     return PredictDemandResponse(
@@ -431,7 +469,8 @@ class TrainModelResponse(BaseModel):
 @router.post("/train", response_model=TrainModelResponse)
 def train_model(req: TrainModelRequest):
     """
-    고객사 신규 인입 데이터 또는 주기적 배치로 호출되어 TFT 글로벌 모델의 가중치를 미세조정(Fine-Tuning)하는 전이 학습 파이프라인
+    고객사 신규 인입 데이터 또는 주기적 배치로 호출되어 TFT 글로벌 모델의 가중치를 미세조정(Fine-Tuning)하는 전이 학습 파이프라인.
+    인코더 파라미터는 얼리고(Freeze), 디코더 출력층만 미니 배치를 통해 편미분하여 가중치를 업데이트합니다.
     """
     if len(req.historical_sales) < 14:
         raise HTTPException(
@@ -439,28 +478,90 @@ def train_model(req: TrainModelRequest):
             detail=f"Fine-tuning requires at least 14 days of historical sales. Provided: {len(req.historical_sales)}"
         )
     
-    # Mocking fine-tuning training process
-    epochs = 10
+    import torch
+    import torch.optim as optim
+    from utils.ml.tft_network import QuantileLoss
+    
+    epochs = 5
     lr = 0.001
     if req.hyperparameters:
         epochs = req.hyperparameters.get("epochs", epochs)
         lr = req.hyperparameters.get("learning_rate", lr)
+        
+    model = get_tft_model()
     
-    # Simulate a small training loss reduction
-    initial_loss = 0.052
-    final_loss = max(0.010, initial_loss - (epochs * lr * 2.0))
-    mae = float(np.random.uniform(1.10, 1.35))
-
+    # ── [전이 학습: 가중치 동결] 인코더 파라미터는 얼리고 디코더 출력층만 학습 ──
+    for name, param in model.named_parameters():
+        if "output_layer" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+            
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+    loss_fn = QuantileLoss(quantiles=[0.1, 0.5, 0.9])
+    
+    # 판매 시퀀스로 롤링 윈도우 데이터 셋 구성 (Lookback 7, Horizon 7)
+    sales = [s.qty for s in req.historical_sales]
+    lookback = 7
+    horizon = 7
+    
+    X_list = []
+    y_list = []
+    for i in range(len(sales) - lookback - horizon + 1):
+        X_list.append(sales[i : i + lookback])
+        y_list.append(sales[i + lookback : i + lookback + horizon])
+        
+    if not X_list:
+        X_list = [sales[:lookback]]
+        y_list = [[np.mean(sales)] * horizon]
+        
+    X_tensor = torch.tensor(X_list, dtype=torch.float32).unsqueeze(-1)  # [N, lookback, 1]
+    y_tensor = torch.tensor(y_list, dtype=torch.float32)  # [N, horizon]
+    
+    # 미세조정 훈련 루프
+    model.train()
+    initial_loss = None
+    final_loss = 0.0
+    
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+        out, _ = model(X_tensor)  # [N, horizon, 3]
+        loss = loss_fn(out, y_tensor)
+        loss.backward()
+        optimizer.step()
+        
+        if initial_loss is None:
+            initial_loss = loss.item()
+        final_loss = loss.item()
+        
+    # 가중치 원복 (다음 훈련 루프를 위해 동결 해제)
+    for param in model.parameters():
+        param.requires_grad = True
+        
+    # 미세 조정된 가중치 체크포인트 저장
+    import os
+    os.makedirs("outputs", exist_ok=True)
+    tuned_model_path = f"outputs/tuned_{req.company_id}_{req.item_id}.pt"
+    torch.save(model.state_dict(), tuned_model_path)
+    
     trained_version = f"global_tuned_{req.company_id}_{req.item_id}_v1.1"
+    
+    # Calculate MAE based on final predictions (using median quantile q=0.5)
+    model.eval()
+    with torch.no_grad():
+        final_out, _ = model(X_tensor)
+        mae = float(torch.abs(y_tensor - final_out[..., 1]).mean().item())
 
-    logger.info(f"🚀 Fine-tuning M5 global model completed for {req.company_id}/{req.item_id}. Loss: {final_loss:.4f}, MAE: {mae:.2f}")
-
+    logger.info(f"🚀 Fine-tuning M5 global model completed for {req.company_id}/{req.item_id}. Initial Loss: {initial_loss:.4f}, Final Loss: {final_loss:.4f}, MAE: {mae:.2f}")
+    
     return TrainModelResponse(
         status="SUCCESS",
         message="Model fine-tuning completed successfully.",
         trained_model_version=trained_version,
         metrics={
-            "loss": round(final_loss, 4),
+            "initial_loss": round(float(initial_loss), 4),
+            "loss": round(float(final_loss), 4),
             "mae": round(mae, 2)
         }
     )
+
