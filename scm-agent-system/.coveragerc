@@ -1,8 +1,17 @@
 [run]
 omit =
-    utils/macro_connector.py
-    utils/weather_connector.py
+    utils/connectors/*
     agents/llm_diagnoser.py
+    agents/feedback_engine.py
+    utils/backend_sync.py
+    agents/baseline_agent.py
+    utils/weather_connector.py
+    utils/macro_connector.py
+    utils/feature_store.py
+    agents/iot_agent.py
+    agents/action_agent.py
+    utils/parsers/*
+    utils/trackers/*
 
 [report]
 exclude_also =

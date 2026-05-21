@@ -96,6 +96,39 @@ def init_db():
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        conn.commit()
+
+        # Find and apply migration scripts from migrations/ directory
+        migrations_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "migrations"))
+        if os.path.exists(migrations_dir):
+            migration_files = sorted([
+                f for f in os.listdir(migrations_dir)
+                if f.endswith(".sql") and "_" in f
+            ])
+            
+            for file_name in migration_files:
+                version = file_name.split("_")[0]
+                
+                # Check if this migration was already applied
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM schema_migrations WHERE version = ?", (version,))
+                already_applied = cursor.fetchone()
+                
+                if not already_applied:
+                    file_path = os.path.join(migrations_dir, file_name)
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        sql_script = f.read()
+                    
+                    print(f"Applying SQLite migration: {file_name}")
+                    try:
+                        conn.executescript(sql_script)
+                        conn.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
+                        conn.commit()
+                    except Exception as e:
+                        conn.rollback()
+                        print(f"Failed to apply migration {file_name}: {e}")
+                        raise e
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS regions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

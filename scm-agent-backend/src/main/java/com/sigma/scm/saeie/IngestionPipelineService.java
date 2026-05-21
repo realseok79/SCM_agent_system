@@ -384,6 +384,52 @@ public class IngestionPipelineService {
         return response;
     }
 
+    @Transactional
+    public Map<String, Object> confirmSpreadsheet(String batchId, Map<String, String> userOverrides, String changedBy) {
+        ImportBatch batch = importBatchRepository.findById(batchId)
+                .orElseThrow(() -> new SaeieException.ConflictException("Batch " + batchId + " not found."));
+
+        BatchStatus currentStatus = BatchStatus.valueOf(batch.getStatus());
+        int version = batch.getVersion();
+
+        // REVIEW_REQUIRED 라면 APPROVED 로 수동 전환을 먼저 수행한 뒤 COMMITTED 로 전이
+        if (currentStatus == BatchStatus.REVIEW_REQUIRED) {
+            version = transitionBatchStatus(
+                batchId, BatchStatus.APPROVED, version, BatchStatus.REVIEW_REQUIRED,
+                changedBy, "Manually approved and overrides validated."
+            );
+        }
+
+        // APPROVED -> COMMITTED 상태 전이
+        transitionBatchStatus(
+            batchId, BatchStatus.COMMITTED, version, BatchStatus.APPROVED,
+            changedBy, "Batch integrated to RegionInventory."
+        );
+
+        // StagingInventoryImport에서 VALID 상태의 임시 데이터들을 RegionInventory 실재고 테이블로 적재 (UPSERT)
+        List<StagingInventoryImport> stgList = stagingInventoryImportRepository.findByImportBatchId(batchId);
+        int committedCount = 0;
+
+        for (StagingInventoryImport stg : stgList) {
+            if ("VALID".equals(stg.getValidationStatus())) {
+                RegionInventoryId invId = new RegionInventoryId(stg.getRegionCode(), stg.getProductName(), stg.getDate());
+                RegionInventory inv = regionInventoryRepository.findById(invId).orElse(new RegionInventory());
+                inv.setId(invId);
+                inv.setQuantity(stg.getQuantity());
+                inv.setSourceBatchId(batchId);
+                inv.setUpdatedAt(LocalDateTime.now());
+                regionInventoryRepository.save(inv);
+                committedCount++;
+            }
+        }
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("batchId", batchId);
+        res.put("status", BatchStatus.COMMITTED.name());
+        res.put("committedCount", committedCount);
+        return res;
+    }
+
     public Map<String, Object> analyzeSpreadsheet(String companyId, MultipartFile file) throws Exception {
         long fileSize = file.getSize();
         if (fileSize > 52428800) { // 50MB

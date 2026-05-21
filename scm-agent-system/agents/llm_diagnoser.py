@@ -23,7 +23,7 @@ def generate_action_plan(
     """
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        return f"[Rule Engine] {base_message}"
+        return base_message
 
     try:
         from openai import OpenAI
@@ -60,4 +60,4 @@ def generate_action_plan(
     except Exception as e:
         print(f"[LLM Diagnoser] API call failed: {e}")
         
-    return f"[Rule Engine] {base_message}"
+    return base_message
