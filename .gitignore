@@ -40,8 +40,10 @@ pip-delete-this-directory.txt
 # --- Java & Gradle (Backend) ---
 .gradle/
 build/
-bin/
-out/
+/bin/
+/out/
+/scm-agent-backend/bin/
+/scm-agent-backend/out/
 *.class
 *.jar
 *.war
