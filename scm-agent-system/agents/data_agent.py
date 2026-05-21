@@ -98,7 +98,17 @@ class DataAgent:
 
     def _load_db(self) -> list[dict]:
         if not os.path.exists(DATA_PATH):
-            raise FileNotFoundError(f"SCM 더미 데이터 없음: {DATA_PATH}")
+            logger.info(f"⚠️ SCM 더미 데이터가 존재하지 않아 자동 생성을 개시합니다: {DATA_PATH}")
+            try:
+                os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
+                from simulator.data_generator import SCMDataGenerator
+                generator = SCMDataGenerator(start_date="2026-01-01", days=100)
+                df = generator.generate()
+                generator.save_json(df, path=DATA_PATH)
+                logger.info("✅ 가상 SCM 더미 데이터 자동 생성 및 저장 완료!")
+            except Exception as e:
+                logger.error(f"❌ 더미 데이터 자동 생성 실패: {e}")
+                raise FileNotFoundError(f"SCM 더미 데이터 없음: {DATA_PATH}") from e
         with open(DATA_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data

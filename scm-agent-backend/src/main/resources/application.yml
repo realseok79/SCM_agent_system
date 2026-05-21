@@ -1,7 +1,7 @@
 spring:
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:} # 환경변수로부터 키 로딩, 없으면 Fallback 작동
+      api-key: ${OPENAI_API_KEY:dummy-key} # 환경변수로부터 키 로딩, 없으면 Fallback 작동
   profiles:
     active: dev # 기본적으로 개발 프로파일(dev) 활성화
   application:
@@ -10,7 +10,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/scm_enterprise}
     username: ${DB_USERNAME:scm_admin}
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:scm_secret_password}
     driver-class-name: org.postgresql.Driver
 
   jpa:

@@ -1,10 +1,16 @@
 # scripts/train_global_m5.py
 import os
+import sys
+
+# 상위 디렉토리(scm-agent-system)를 Python Path에 추가하여 utils 모듈을 찾을 수 있도록 설정
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import numpy as np
 import logging
-from torch.utils.data import TensorDataset, DataLoader
+import argparse
 from utils.ml.tft_network import TemporalFusionTransformer, QuantileLoss
+from utils.ml.tft_dataset import load_m5_data, create_dataloaders
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
@@ -80,26 +86,37 @@ class EarlyStopping:
                 self.early_stop = True
         return self.early_stop
 
-def train_global_model(total_days=100, num_items=50, epochs=5, batch_size=8, lr=0.001):
+def train_global_model(csv_path="../../data/raw/sales_train_evaluation.csv", num_items=None, epochs=5, batch_size=64, lr=0.001, test_mode=False):
     logger.info("🎬 Initializing TFT Global Model Training...")
     
-    # 1. 시뮬레이션용 M5 판매량 시계열 데이터 생성 [num_items, total_days]
-    np.random.seed(42)
-    sales_data = np.random.poisson(lam=15.0, size=(num_items, total_days)).astype(np.float32)
+    # 디바이스 설정 (CUDA 최우선)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"⚡ Using device: {device}")
+    
+    # 1. 실제 M5 판매량 시계열 데이터 로드 [num_items, total_days]
+    sales_data = load_m5_data(csv_path=csv_path, num_items=num_items)
+    
+    if test_mode:
+        logger.info("🛠️ [Test Mode] 훈련 에포크를 1로 제한하고 일부 데이터만 사용합니다.")
+        epochs = 1
+        sales_data = sales_data[:10, :100]  # 극소량 데이터만 추출
     
     # 2. Time-Series CV 제너레이터 준비
     cv = TimeSeriesCrossValidator(lookback_window=30, horizon=7, stride=5)
     
     # 3. 모델, 손실 함수, 옵티마이저 선언
     # 피처는 단순 판매량 시퀀스 1개이므로 num_features=1
-    model = TemporalFusionTransformer(num_features=1, d_model=16, num_heads=2, horizon=7)
+    model = TemporalFusionTransformer(num_features=1, d_model=16, num_heads=2, horizon=7).to(device)
     loss_fn = QuantileLoss(quantiles=[0.1, 0.5, 0.9])
     
     # Weight Decay를 정규화 항으로 포함하는 AdamW 옵티마이저 사용
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    early_stopping = EarlyStopping(patience=3)
 
     os.makedirs("outputs", exist_ok=True)
+    
+    # MLflow의 한글 경로(URL 인코딩) 파싱 버그로 인한 PermissionError 방지
+    if MLFLOW_AVAILABLE:
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
     
     with mlflow.start_run(run_name="TFT_Global_M5_Training") as run:
         mlflow.log_param("lookback_window", 30)
@@ -110,23 +127,14 @@ def train_global_model(total_days=100, num_items=50, epochs=5, batch_size=8, lr=
         # CV 폴드를 돌며 점진적 훈련 수행
         for fold, (train_data, val_data) in enumerate(cv.split(sales_data)):
             logger.info(f"🌀 Training on Fold {fold + 1}...")
+            early_stopping = EarlyStopping(patience=3)
             
             X_tr, y_tr = train_data
             X_val, y_val = val_data
             
-            # PyTorch 텐서 캐스팅 및 DataLoader 구축
-            # TFT는 [Batch, SeqLen, NumFeatures] 형태 입력을 기대하므로 Feature 차원을 마지막에 추가
-            train_dataset = TensorDataset(
-                torch.tensor(X_tr).unsqueeze(-1), 
-                torch.tensor(y_tr)
-            )
-            val_dataset = TensorDataset(
-                torch.tensor(X_val).unsqueeze(-1), 
-                torch.tensor(y_val)
-            )
-            
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-            val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+            # PyTorch 텐서 캐스팅 및 DataLoader 구축 (M5Dataset의 pin_memory 활용)
+            num_workers = 0 if os.name == 'nt' else 4  # Windows 멀티프로세싱 이슈 대비 (안전을 위해 0)
+            train_loader, val_loader = create_dataloaders(X_tr, y_tr, X_val, y_val, batch_size=batch_size, num_workers=num_workers)
             
             # 에포크 훈련 루프
             for epoch in range(epochs):
@@ -134,6 +142,7 @@ def train_global_model(total_days=100, num_items=50, epochs=5, batch_size=8, lr=
                 train_loss = 0.0
                 
                 for batch_x, batch_y in train_loader:
+                    batch_x, batch_y = batch_x.to(device), batch_y.to(device)
                     optimizer.zero_grad()
                     out, _ = model(batch_x)
                     loss = loss_fn(out, batch_y)
@@ -148,6 +157,7 @@ def train_global_model(total_days=100, num_items=50, epochs=5, batch_size=8, lr=
                 val_loss = 0.0
                 with torch.no_grad():
                     for batch_x, batch_y in val_loader:
+                        batch_x, batch_y = batch_x.to(device), batch_y.to(device)
                         out, _ = model(batch_x)
                         loss = loss_fn(out, batch_y)
                         val_loss += loss.item() * batch_x.size(0)
@@ -168,4 +178,19 @@ def train_global_model(total_days=100, num_items=50, epochs=5, batch_size=8, lr=
             logger.info("💾 Saved global model check-point to outputs/global_base_model.pt")
 
 if __name__ == "__main__":
-    train_global_model()
+    parser = argparse.ArgumentParser(description="TFT M5 Global Model Training")
+    parser.add_argument("--csv_path", type=str, default="D:\\SCM_Data\\raw\\sales_train_evaluation.csv", help="Path to M5 dataset CSV")
+    parser.add_argument("--num_items", type=int, default=None, help="Number of items to load (default: all)")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size (VRAM 12GB: 64~128)")
+    parser.add_argument("--test-mode", action="store_true", help="Run a quick test to check for OOM or errors")
+    
+    args = parser.parse_args()
+    
+    train_global_model(
+        csv_path=args.csv_path,
+        num_items=args.num_items,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        test_mode=args.test_mode
+    )

@@ -1,0 +1,37 @@
+# Dockerfile.api
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# 컴파일 필수 패키지 설치
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scm-agent-system/requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# 2단계: 경량 러너 빌드
+FROM python:3.11-slim as runner
+
+WORKDIR /app
+
+# 빌더의 패키지 설치본 카피
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# 프로젝트 소스 코드 복사 (전체 디렉토리 컨텍스트에서 복사 가능하게 설계)
+COPY scm-agent-system/ ./scm-agent-system/
+COPY utils/ ./utils/ 2>/dev/null || true
+COPY config/ ./config/ 2>/dev/null || true
+COPY agents/ ./agents/ 2>/dev/null || true
+
+WORKDIR /app/scm-agent-system
+
+EXPOSE 8000
+
+# 실행 권한 부여 및 줄바꿈(LF) 포맷 세팅 보장
+RUN chmod +x run_api.sh
+
+# API 서버 구동
+CMD ["./run_api.sh"]

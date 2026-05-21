@@ -1,9 +1,12 @@
 # agents/ml_agent.py
 import logging
+import os
 import numpy as np
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
+import torch
+import torch.optim as optim
 
 logger = logging.getLogger("MLAgent")
 
@@ -374,6 +377,7 @@ class PredictDemandResponse(BaseModel):
     model_version: str
 
 _tft_model = None
+_onnx_session = None
 
 def get_tft_model():
     global _tft_model
@@ -381,7 +385,6 @@ def get_tft_model():
         from utils.ml.tft_network import TemporalFusionTransformer
         _tft_model = TemporalFusionTransformer(num_features=1, d_model=16, num_heads=2, horizon=7)
         import os
-        import torch
         # 사전 훈련된 모델 로드 시도
         model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../outputs/global_base_model.pt"))
         if os.path.exists(model_path):
@@ -394,12 +397,27 @@ def get_tft_model():
             logger.info("💡 No pre-trained TFT model checkpoint found. Using initialized base model.")
     return _tft_model
 
+def get_tft_onnx_session():
+    global _onnx_session
+    if _onnx_session is None:
+        try:
+            import onnxruntime as ort
+            onnx_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../outputs/global_base_model.onnx"))
+            if os.path.exists(onnx_path):
+                # CPUExecutionProvider로 설정하여 컨테이너 환경의 멀티스레딩 안정화 및 속도 향상
+                _onnx_session = ort.InferenceSession(onnx_path, providers=['CPUExecutionProvider'])
+                logger.info("🧠 High-performance ONNX Inference Session loaded successfully from outputs.")
+            else:
+                logger.info("💡 No compiled ONNX model checkpoint found. Dynamic fallback to PyTorch.")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load ONNX Inference Session: {e}. Dynamic fallback to PyTorch.")
+    return _onnx_session
+
 @router.post("/predict-demand-hybrid", response_model=PredictDemandResponse)
 def predict_demand_hybrid(req: PredictDemandRequest):
     """
     TFT (Temporal Fusion Transformer) 및 비대칭 핀볼 손실 분위수(Quantile Loss)를 활용한 수요 분포 예측 및 SHAP 기여도 산출
     """
-    import torch
     sales_qtys = [s.qty for s in req.recent_sales]
     
     # ── [TFT 실시간 추론 연산] 45일치 인입 데이터 텐서 매핑 ──
@@ -410,19 +428,43 @@ def predict_demand_hybrid(req: PredictDemandRequest):
         
     sales_qtys = sales_qtys[-30:]  # 최신 30일 데이터 슬라이싱
     
-    # [1, 30, 1] 3차원 텐서 변환
-    x_tensor = torch.tensor(sales_qtys, dtype=torch.float32).view(1, 30, 1)
+    # 1. 고속 ONNX Runtime 추론 가용 여부 점검 및 처리
+    session = get_tft_onnx_session()
+    is_onnx = False
     
-    model = get_tft_model()
-    model.eval()
-    with torch.no_grad():
-        # 순전파 (Forward Propagation)
-        out, weights = model(x_tensor)  # out: [1, 7, 3], weights: [1, 30, 1]
+    if session is not None:
+        try:
+            logger.info("⚡ Executing High-Performance ONNX inference (GIL-free runtime)...")
+            sales_array = np.array(sales_qtys, dtype=np.float32).reshape(1, 30, 1)
+            outputs = session.run(["predictions", "vsn_weights"], {"input_sales": sales_array})
+            
+            out = outputs[0]  # [1, 7, 3]
+            weights = outputs[1]  # [1, 30, 1] or weights
+            
+            predicted_10 = float(out[0, :, 0].mean())
+            predicted_50 = float(out[0, :, 1].mean())
+            predicted_90 = float(out[0, :, 2].mean())
+            
+            vsn_weights = weights[0].mean(axis=0).tolist() if weights is not None else [0.2] * 30
+            is_onnx = True
+        except Exception as e:
+            logger.error(f"❌ ONNX high-performance inference failed: {e}. Falling back to standard PyTorch CPU.")
+            session = None  # PyTorch 폴백 활성화
+            
+    if session is None:
+        # PyTorch 폴백 모드 실행
+        logger.info("🔄 Falling back to standard PyTorch CPU execution...")
+        x_tensor = torch.tensor(sales_qtys, dtype=torch.float32).view(1, 30, 1)
+        model = get_tft_model()
+        model.eval()
+        with torch.no_grad():
+            out, weights = model(x_tensor)  # out: [1, 7, 3], weights: [1, 30, 1]
+            
+        predicted_10 = float(out[0, :, 0].mean().item())
+        predicted_50 = float(out[0, :, 1].mean().item())
+        predicted_90 = float(out[0, :, 2].mean().item())
         
-    # 분위수별 평균 예측값 산출
-    predicted_10 = float(out[0, :, 0].mean().item())
-    predicted_50 = float(out[0, :, 1].mean().item())
-    predicted_90 = float(out[0, :, 2].mean().item())
+        vsn_weights = weights[0].mean(dim=0).tolist() if weights is not None else [0.2] * 30
     
     # 공휴일 이벤트 영향 보정 (Chuseok/Seollal 등)
     holiday_effect = 0.0
@@ -435,12 +477,13 @@ def predict_demand_hybrid(req: PredictDemandRequest):
     predicted_90 = max(0.0, predicted_90 * (1.0 + holiday_effect))
     
     # SHAP Value 계산 (VSN 가중치 기여도를 기반으로 산출)
-    vsn_weights = weights[0].mean(dim=0).tolist() if weights is not None else [0.2] * 30
     shap_values = {
         "lag_1": round(float(vsn_weights[-1] if len(vsn_weights) > 0 else 0.42), 2),
         "is_holiday": round(float(holiday_effect), 2),
         "rolling_mean_7": round(float(np.mean(vsn_weights[-7:]) if len(vsn_weights) >= 7 else 0.18), 2)
     }
+    
+    model_ver = "global_base_v1.0-onnx" if is_onnx else "global_base_v1.0-pytorch"
     
     return PredictDemandResponse(
         item_id=req.item_id,
@@ -449,8 +492,9 @@ def predict_demand_hybrid(req: PredictDemandRequest):
         predicted_demand_50=round(predicted_50, 2),
         predicted_demand_90=round(predicted_90, 2),
         shap_values=shap_values,
-        model_version="global_base_v1.0"
+        model_version=model_ver
     )
+
 
 # ── New Hybrid SCM Model Fine-tuning Endpoint ──
 
@@ -478,8 +522,6 @@ def train_model(req: TrainModelRequest):
             detail=f"Fine-tuning requires at least 14 days of historical sales. Provided: {len(req.historical_sales)}"
         )
     
-    import torch
-    import torch.optim as optim
     from utils.ml.tft_network import QuantileLoss
     
     epochs = 5

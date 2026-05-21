@@ -26,7 +26,7 @@ def run_iot_sensor_cycle():
         
         active_devices = res.json()
         if not active_devices:
-            logger.debug("💡 No active IoT devices registered.")
+            pass # logger.debug("💡 No active IoT devices registered.")
             return
 
         # 2. 센서값 생성

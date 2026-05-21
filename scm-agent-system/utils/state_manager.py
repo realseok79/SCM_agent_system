@@ -32,7 +32,7 @@ def save_lkv(data):
             json.dump(data, f, ensure_ascii=False, indent=2)
         
         # 덮어쓰기 (원자적 연산)
-        os.rename(temp_file, STATE_FILE)
+        os.replace(temp_file, STATE_FILE)
     except Exception as e:
         print(f"🚨 [LKV 저장 실패]: {e}")
         if os.path.exists(temp_file):

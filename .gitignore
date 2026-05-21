@@ -1,22 +1,87 @@
-# Data files
-*.csv
-data/
-outputs/
+# ====================================================================
+# SCM Agent System Monorepo Root .gitignore
+# ====================================================================
 
-# Python
-.pytest_cache/
-__pycache__/
-*.pyc
+# --- OS & IDEs ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.antigravity/
+*.suo
+*.user
+*.sln.docstates
+
+# --- Virtual Environments (Python) ---
+myenv/
 venv/
+.venv/
+env/
+ENV/
+lib/
+lib64/
+bin/
+include/
+share/
 
-# Java / Gradle
+# --- Python Cache & Temporary Files ---
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.ipynb_checkpoints/
+.poetry.lock
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Java & Gradle (Backend) ---
 .gradle/
 build/
 bin/
 out/
 *.class
+*.jar
+*.war
+.gradletasknamecache
+# Keep gradle wrapper jar
+!**/gradle/wrapper/gradle-wrapper.jar
 
-# IDEs
-.vscode/
-.idea/
-.DS_Store
+# --- Secrets & Local Configurations ---
+.env
+.env.local
+.env.*.local
+.streamlit/secrets.toml
+
+# --- Database & Runtime Files ---
+*.db
+*.db-shm
+*.db-wal
+*.log
+*_output.txt
+data/last_known_values.json
+data/last_known_values.json.tmp
+mlflow.db
+
+# --- Machine Learning & Large Artifacts ---
+*.pt
+*.onnx
+*.xlsx
+
+# --- Outputs / Artifacts ---
+# Ignore JSON outputs in the system's output folder
+scm-agent-system/outputs/*.json
+
+# --- Data files (CSV) ---
+# By default, ignore all CSVs in the repo
+*.csv
+
+# Exceptions: explicit files that MUST be tracked
+!scm-agent-system/data/sample_inventory_data.csv
+!scm-agent-system/data/wmo_station_master.csv
+!scm-agent-system/tests/mock_data.csv
+!scm-agent-system/outputs/scm_dummy_data.csv
+!scm-agent-system/outputs/scm_dummy_data.json
+!scm-agent-system/config/decision_rules.yaml

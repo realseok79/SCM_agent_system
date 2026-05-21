@@ -117,7 +117,7 @@ def test_ml_predict_demand_hybrid():
     assert "predicted_demand_50" in data
     assert "predicted_demand_90" in data
     assert "shap_values" in data
-    assert data["model_version"] == "global_base_v1.0"
+    assert "global_base_v1.0" in data["model_version"]
     assert data["predicted_demand_90"] >= data["predicted_demand_50"]
     assert data["predicted_demand_50"] >= data["predicted_demand_10"]
 

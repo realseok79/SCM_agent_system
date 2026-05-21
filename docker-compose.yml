@@ -60,11 +60,30 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      ml-api:
+        condition: service_started
     environment:
       BACKEND_URL: http://backend:8080
+      ML_API_URL: http://ml-api:8000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "8501:8501"
+    networks:
+      - scm-network
+
+  # ── 4. ML/AI 전용 API 서버 (Python FastAPI + ONNX Runtime) ──
+  ml-api:
+    build:
+      context: .
+      dockerfile: ./scm-agent-system/Dockerfile.api
+    container_name: scm-ml-api
+    volumes:
+      # 컨테이너가 재시작되어도 가중치와 ONNX 모델 파일이 보존되도록 로컬 볼륨 바인딩
+      - ./scm-agent-system/outputs:/app/scm-agent-system/outputs
+    environment:
+      - MLFLOW_TRACKING_URI=sqlite:///mlflow.db
+      - DB_URL=jdbc:postgresql://postgres:5432/scm_enterprise
+    # 포트 노출은 생략하여 외부 접근을 차단하고 scm-network 프라이빗 통신망만 이용
     networks:
       - scm-network
 
@@ -75,3 +94,4 @@ volumes:
 networks:
   scm-network:
     driver: bridge
+

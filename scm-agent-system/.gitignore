@@ -1,44 +1,62 @@
+# ====================================================================
+# SCM Agent System Subdirectory .gitignore
+# ====================================================================
+
+# --- OS & IDEs ---
+.DS_Store
+.vscode/
+.idea/
+.antigravity/
+
+# --- Virtual Environments (Python) ---
+myenv/
 venv/
+.venv/
+
+# --- Python Cache & Temporary Files ---
 __pycache__/
 *.pyc
 .pytest_cache/
 .coverage
+.ipynb_checkpoints/
 
-# CSV 기본 무시 (데이터 마스터 파일만 예외)
-*.csv
-!data/sample_inventory_data.csv
-!data/wmo_station_master.csv
-!tests/mock_data.csv
+# --- Gradle & Build outputs ---
+.gradle/
+build/
 
-# SQLite runtime files (스키마는 init_db()가 자동 생성)
+# --- Secrets & Local Configurations ---
+.env
+.streamlit/secrets.toml
+!.streamlit/config.toml
+
+# --- Database & Runtime Files ---
 data/*.db
 data/*.db-shm
 data/*.db-wal
 simulator/data/*.db
 simulator/data/*.db-shm
 simulator/data/*.db-wal
-
-# Test logs and output files
-*_output.txt
-*.log
-
-# Runtime state files
 data/last_known_values.json
 data/last_known_values.json.tmp
+*.log
+*_output.txt
 
-# Environment secrets
-.env
-.streamlit/secrets.toml
+# --- Machine Learning & Large Artifacts ---
+*.pt
+*.onnx
+*.xlsx
 
-# Streamlit 테마 설정 추적
-!.streamlit/config.toml
-
-# 비즈니스 규칙 설정 파일 예외적 추적 허용
-config/*
-!config/decision_rules.yaml
-
-# Output artifacts (런타임 생성물)
+# --- Outputs / Artifacts ---
 outputs/*.json
+
+# --- Data files (CSV) ---
+# By default, ignore all CSVs in this directory
+*.csv
+
+# Exceptions: explicit files that MUST be tracked
+!data/sample_inventory_data.csv
+!data/wmo_station_master.csv
+!tests/mock_data.csv
 !outputs/scm_dummy_data.json
 !outputs/scm_dummy_data.csv
-
+!config/decision_rules.yaml

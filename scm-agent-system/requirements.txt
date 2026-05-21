@@ -1,8 +1,10 @@
 # ── Core Framework ──
 fastapi
 uvicorn
+gunicorn
 streamlit
 streamlit-autorefresh
+
 
 # ── Data & Science ──
 pandas
@@ -37,3 +39,6 @@ xgboost
 sentence-transformers
 prophet
 redis
+onnx
+onnxruntime
+

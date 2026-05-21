@@ -68,10 +68,12 @@ class IoTSensorSimulator:
             
             # 정상 범위(alert_min, alert_max) 이탈 정도 계산
             if val < profile["alert_min"]:
-                deviation = (profile["alert_min"] - val) / profile["alert_min"]
+                denom = profile["alert_min"] if profile["alert_min"] != 0.0 else 1.0
+                deviation = (profile["alert_min"] - val) / denom
                 penalty_sum += deviation * 25.0  # 최대 감점 가중치
             elif val > profile["alert_max"]:
-                deviation = (val - profile["alert_max"]) / profile["alert_max"]
+                denom = profile["alert_max"] if profile["alert_max"] != 0.0 else 1.0
+                deviation = (val - profile["alert_max"]) / denom
                 penalty_sum += deviation * 30.0  # 최대 감점 가중치
                 
         # 기본 100점에서 이탈 페널티 차감 (최하점 0점 방어)

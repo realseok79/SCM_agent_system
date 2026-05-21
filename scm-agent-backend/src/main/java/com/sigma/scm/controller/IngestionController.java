@@ -36,7 +36,7 @@ public class IngestionController {
         }
     }
 
-    @PostMapping("/upload/confirm")
+    @PostMapping(value = "/upload/confirm", params = "company_id")
     public ResponseEntity<Map<String, Object>> confirmSpreadsheet(
             @RequestParam("company_id") String companyId,
             @RequestParam("file") MultipartFile file,
@@ -62,7 +62,7 @@ public class IngestionController {
         }
     }
 
-    @PostMapping("/upload/confirm")
+    @PostMapping(value = "/upload/confirm", params = "batch_id")
     public ResponseEntity<Map<String, Object>> confirmSpreadsheet(
             @RequestParam("batch_id") String batchId,
             @RequestBody(required = false) Map<String, String> userOverrides) {
