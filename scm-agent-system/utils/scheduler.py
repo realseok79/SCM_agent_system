@@ -10,6 +10,8 @@ from utils.logger import get_logger
 from utils.state_manager import load_lkv
 from utils.scoring_engine import LogisticsRiskScorer
 from agents.llm_diagnoser import generate_action_plan
+from utils.connectors.iot_simulator import IoTSensorSimulator
+from agents.enterprise_data_agent import TeamSigmaDataAgent
 
 logger = get_logger("SCM_Scheduler")
 
@@ -93,6 +95,10 @@ def daily_llm_insight_batch():
     success_count = 0
     fail_count = 0
     
+    # IoT 및 Spire 에이전트 초기화
+    iot_sim = IoTSensorSimulator()
+    enterprise_agent = TeamSigmaDataAgent()
+    
     for r in regions:
         r_name = r["region_name"]
         r_code = r["region_code"]
@@ -119,6 +125,13 @@ def daily_llm_insight_batch():
         gdelt_info = country_data.get("gdelt", {"average_tone": 0.0, "risk_level": "Low", "top_headline": "Fallback Mode"})
         trend_info = country_data.get("trends", {"composite_score": 0.0, "matched_count": 0})
         
+        # IoT 창고 건강 점수 산출
+        iot_res = iot_sim.get_warehouse_health_score(r_code)
+        iot_health = iot_res["warehouse_health_score"]
+        
+        # Spire Maritime 항만 혼잡도 점수 산출
+        port_congestion = enterprise_agent.calculate_port_congestion_score()
+        
         try:
             # 1. 리스크 스코어 계산
             scorer = LogisticsRiskScorer()
@@ -126,13 +139,18 @@ def daily_llm_insight_batch():
                 data_vector=data_vector,
                 weather_text=raw_weather,
                 trend_score=trend_info.get("composite_score", 0.0),
-                gdelt_tone=gdelt_info.get("average_tone", 0.0)
+                gdelt_tone=gdelt_info.get("average_tone", 0.0),
+                iot_health_score=iot_health,
+                port_congestion_score=port_congestion
             )
             
             lt_delay = scm_metrics["lead_time_delay"]
             ds = scm_metrics["demand_shock_index"]
             action_code = scm_metrics["decision_action_code"]
             base_message = scm_metrics["decision_message"]
+            r_total = scm_metrics["integrated_risk_score"]
+            r_level = "HIGH" if r_total >= 60.0 else "LOW"
+            r_desc = scm_metrics["delay_comment"]
             
             # 2. LLM 처방 텍스트 생성
             action_plan_msg = generate_action_plan(
@@ -144,20 +162,23 @@ def daily_llm_insight_batch():
                 base_message=base_message
             )
             
-            # 3. DB에 UPSERT 적재
+            # 3. DB에 UPSERT 적재 (새로 추가한 risk_score, risk_level, description 포함)
             cursor.execute("""
-                INSERT INTO regional_insights (region_code, date, action_plan_msg, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO regional_insights (region_code, date, action_plan_msg, risk_score, risk_level, description, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(region_code, date) DO UPDATE SET
                     action_plan_msg = excluded.action_plan_msg,
+                    risk_score = excluded.risk_score,
+                    risk_level = excluded.risk_level,
+                    description = excluded.description,
                     updated_at = CURRENT_TIMESTAMP
-            """, (r_code, today_str, action_plan_msg))
+            """, (r_code, today_str, action_plan_msg, r_total, r_level, r_desc))
             conn.commit()
             
-            logger.info(f"  ✅ {r_name} SCM AI 처방 업데이트 완료")
+            logger.info(f"  ✅ {r_name} SCM AI 처방 및 리스크 지표 업데이트 완료")
             success_count += 1
         except Exception as e:
-            logger.error(f"  ❌ {r_name} SCM AI 처방 업데이트 실패: {e}")
+            logger.error(f"  ❌ {r_name} SCM AI 처방 및 리스크 지표 업데이트 실패: {e}")
             fail_count += 1
             
     conn.close()

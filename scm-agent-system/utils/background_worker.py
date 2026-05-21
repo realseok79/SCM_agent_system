@@ -78,9 +78,50 @@ def run_worker():
             if country in station_map:
                 s_info = station_map[country]
                 try:
-                    weather = get_live_weather_by_station(s_info["id"], s_info["lat"], s_info["lon"])
-                    if weather:
-                        country_data["weather"] = weather
+                    weather_str = get_live_weather_by_station(s_info["id"], s_info["lat"], s_info["lon"])
+                    if weather_str:
+                        if isinstance(weather_str, dict):
+                            country_data["weather"] = weather_str
+                        else:
+                            # Parse the weather string into a structured dictionary with float temp
+                            temp = 22.5
+                            humidity = 45.0
+                            precipitation = 0.0
+                            weather_desc = "Clear"
+                            
+                            import re
+                            temp_match = re.search(r"Temperature:\s*([0-9.-]+)", weather_str)
+                            if temp_match:
+                                try:
+                                    temp = float(temp_match.group(1))
+                                except ValueError:
+                                    pass
+                            
+                            hum_match = re.search(r"Humidity:\s*([0-9.-]+)", weather_str)
+                            if hum_match:
+                                try:
+                                    humidity = float(hum_match.group(1))
+                                except ValueError:
+                                    pass
+                                    
+                            prec_match = re.search(r"Precipitation:\s*([0-9.-]+)", weather_str)
+                            if prec_match:
+                                try:
+                                    precipitation = float(prec_match.group(1))
+                                except ValueError:
+                                    pass
+                                    
+                            dot_idx = weather_str.find(".")
+                            if dot_idx != -1:
+                                weather_desc = weather_str[:dot_idx].strip()
+                            
+                            country_data["weather"] = {
+                                "temp": temp,
+                                "humidity": humidity,
+                                "precipitation": precipitation,
+                                "weather_desc": weather_desc,
+                                "raw_text": weather_str
+                            }
                 except Exception as e:
                     print(f"  ❌ Weather failed for {country}: {e}")
             

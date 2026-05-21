@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface ImportBatchRepository extends JpaRepository<ImportBatch, String> {
     List<ImportBatch> findByCompanyId(String companyId);
+    List<ImportBatch> findByStatus(String status);
 }

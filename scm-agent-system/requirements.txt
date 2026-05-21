@@ -10,6 +10,7 @@ numpy
 matplotlib
 scipy
 openpyxl
+plotly
 
 # ── External APIs & Network ──
 requests

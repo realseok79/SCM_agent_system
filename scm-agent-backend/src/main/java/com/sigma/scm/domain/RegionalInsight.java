@@ -21,6 +21,15 @@ public class RegionalInsight {
     @Column(name = "action_plan_msg", nullable = false, columnDefinition = "TEXT")
     private String actionPlanMsg;
 
+    @Column(name = "risk_score")
+    private Double riskScore;
+
+    @Column(name = "risk_level", length = 50)
+    private String riskLevel;
+
+    @Column(name = "description", length = 255)
+    private String description;
+
     @Column(name = "updated_at")
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

@@ -83,7 +83,7 @@ class LogisticsRiskScorer:
                 }
             ]
 
-    def parse_weather_score(self, weather_text: str) -> float:
+    def parse_weather_score(self, weather_text) -> float:
         """
         기상청 raw GTS 텍스트 또는 OpenWeatherMap 대체 데이터에서 키워드를 파싱하여 악천후 지수(0~10)를 도출합니다.
         경고 이모지가 있더라도 본문 키워드 파싱이 정상 동작하도록 예외 처리를 제거했습니다.
@@ -91,7 +91,19 @@ class LogisticsRiskScorer:
         if not weather_text:
             return 0.0
         
-        weather_text_lower = weather_text.lower()
+        if isinstance(weather_text, dict):
+            desc = weather_text.get("weather_desc", "") or weather_text.get("raw_text", "")
+            if not desc:
+                precip = weather_text.get("precipitation", 0.0)
+                if precip > 15.0:
+                    desc = "Heavy rain"
+                elif precip > 0.0:
+                    desc = "Rain"
+                else:
+                    desc = "Clear"
+            weather_text = desc
+
+        weather_text_lower = str(weather_text).lower()
         
         # 우선순위가 높은 순서대로 단일 regex 매칭 수행 (성능 최적화)
         if re.search(r"typhoon|hurricane|tornado|태풍|폭풍우", weather_text_lower):
@@ -158,17 +170,25 @@ class LogisticsRiskScorer:
         # 안정성을 위해 [-100%, +20%] 범위로 클리핑하고, 소수점 둘째 자리까지 반올림
         return round(float(np.clip(ds, -100.0, 20.0)), 2)
 
-    def calculate_lead_time_delay(self, weather_score: float, prev_risk_score: float) -> float:
+    def calculate_lead_time_delay(self, weather_score: float, prev_risk_score: float, iot_health_score: float = 100.0, port_congestion_score: float = 0.0) -> float:
         """
         ③ 예상 조달 지연일 (LTdelay) 산식 계산 (인과율 보정을 위해 전일 종합 리스크 점수 prev_risk_score 사용)
-        LTdelay = max(0, lambda1 * W + lambda2 * (M - 1.0)^2)
+        LTdelay = max(0, lambda1 * W + lambda2 * (M - 1.0)^2 + iot_penalty + port_penalty)
         M = prev_risk_score / 50.0 (정상 상태 1.0 수준화, 1% 변동을 정상으로 취급)
         """
         M = prev_risk_score / 50.0
         macro_term = 25.0 * self.lambda2 * (M ** 2)
         weather_term = self.lambda1 * weather_score
         
-        lt_delay = weather_term + macro_term
+        # IoT 창고 건강도 페널티 (건강도가 80점 미만 시 조달 지연 가산)
+        iot_penalty = 0.0
+        if iot_health_score < 80.0:
+            iot_penalty = (80.0 - iot_health_score) / 20.0  # 최대 4일 지연 가산 (0점일 때)
+            
+        # Spire Maritime 항만 혼잡도 페널티
+        port_penalty = port_congestion_score / 25.0  # 최대 4일 지연 가산 (100점일 때)
+        
+        lt_delay = weather_term + macro_term + iot_penalty + port_penalty
         return max(0.0, round(lt_delay, 1))
 
     def calculate_integrated_risk_score(self, cf: float, ds: float, lt_delay: float) -> float:
@@ -202,7 +222,7 @@ class LogisticsRiskScorer:
             "message": "물류 흐름이 안정적입니다. 기존의 경제적 주문량(EOQ) 및 재오더포인트(ROP) 스케줄을 **그대로 유지**하십시오."
         }
 
-    def score_all(self, data_vector: dict, weather_text: str, trend_score: float, gdelt_tone: float, prev_risk_score: Optional[float] = None) -> dict:
+    def score_all(self, data_vector: dict, weather_text: str, trend_score: float, gdelt_tone: float, prev_risk_score: Optional[float] = None, iot_health_score: float = 100.0, port_congestion_score: float = 0.0) -> dict:
         # 1. 날씨 점수 파싱
         weather_score = self.parse_weather_score(weather_text)
         
@@ -235,7 +255,9 @@ class LogisticsRiskScorer:
             
         lt_delay = self.calculate_lead_time_delay(
             weather_score=weather_score,
-            prev_risk_score=prev_risk_score
+            prev_risk_score=prev_risk_score,
+            iot_health_score=iot_health_score,
+            port_congestion_score=port_congestion_score
         )
         
         r_total = self.calculate_integrated_risk_score(cf, ds, lt_delay)
@@ -250,10 +272,17 @@ class LogisticsRiskScorer:
             freight_comment = "✅ 유가 및 소비자 물가가 타겟 인플레이션 범위 내로 안정 관리되어 운임 변동성이 최소화된 상태입니다."
 
         # 5-2. 조달 지연 코멘트
+        extra_delay_reasons = []
+        if iot_health_score < 80.0:
+            extra_delay_reasons.append(f"창고 IoT 장비 이상 감지(건강도: {iot_health_score:.1f}점)")
+        if port_congestion_score > 30.0:
+            extra_delay_reasons.append(f"Spire Maritime 감지 항만 혼잡도 상승({port_congestion_score:.1f}점)")
+        extra_reason_str = f" [원인: {', '.join(extra_delay_reasons)}]" if extra_delay_reasons else ""
+
         if lt_delay >= 2.0:
-            delay_comment = f"🚨 거점 악천후 지수 상승({weather_score:.1f}점) 및 리스크 전이로 인해 조달 리드타임이 {lt_delay:.1f}일 급격히 지연될 예정입니다."
+            delay_comment = f"🚨 거점 악천후 지수 상승({weather_score:.1f}점), 리스크 전이 및 대외 요인 영향으로 인해 조달 리드타임이 {lt_delay:.1f}일 급격히 지연될 예정입니다.{extra_reason_str}"
         elif lt_delay >= 0.5:
-            delay_comment = f"⚠️ 국지적 기상 악화 또는 이전 리스크 누적으로 인해 조달 리드타임이 약 {lt_delay:.1f}일 가량 소폭 지연될 가능성이 있습니다."
+            delay_comment = f"⚠️ 국지적 기상 악화 또는 대외 물류 리스크 누적으로 인해 조달 리드타임이 약 {lt_delay:.1f}일 가량 소폭 지연될 가능성이 있습니다.{extra_reason_str}"
         else:
             delay_comment = "✅ 거점 기상 상태가 양호하고 종합 리스크 전이 영향이 없어 조달 리드타임이 정상(지연 없음)입니다."
 

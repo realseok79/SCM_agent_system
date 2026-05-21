@@ -83,7 +83,7 @@ class LogisticsRiskScorer:
                 }
             ]
 
-    def parse_weather_score(self, weather_text: str) -> float:
+    def parse_weather_score(self, weather_text) -> float:
         """
         기상청 raw GTS 텍스트 또는 OpenWeatherMap 대체 데이터에서 키워드를 파싱하여 악천후 지수(0~10)를 도출합니다.
         경고 이모지가 있더라도 본문 키워드 파싱이 정상 동작하도록 예외 처리를 제거했습니다.
@@ -91,7 +91,19 @@ class LogisticsRiskScorer:
         if not weather_text:
             return 0.0
         
-        weather_text_lower = weather_text.lower()
+        if isinstance(weather_text, dict):
+            desc = weather_text.get("weather_desc", "") or weather_text.get("raw_text", "")
+            if not desc:
+                precip = weather_text.get("precipitation", 0.0)
+                if precip > 15.0:
+                    desc = "Heavy rain"
+                elif precip > 0.0:
+                    desc = "Rain"
+                else:
+                    desc = "Clear"
+            weather_text = desc
+
+        weather_text_lower = str(weather_text).lower()
         
         # 우선순위가 높은 순서대로 단일 regex 매칭 수행 (성능 최적화)
         if re.search(r"typhoon|hurricane|tornado|태풍|폭풍우", weather_text_lower):

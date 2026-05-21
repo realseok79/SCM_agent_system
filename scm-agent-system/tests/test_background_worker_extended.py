@@ -136,3 +136,47 @@ def test_run_worker_orchestration_cycle(
     assert saved_state["South Korea"]["macro"] == {"oil_change_pct": 1.5}
     assert saved_state["South Korea"]["gdelt"] == {"risk_level": "Low", "average_tone": 0.0}
     assert saved_state["South Korea"]["trends"] == {"composite_score": 0.3}
+
+@patch("utils.background_worker.get_live_weather_by_station")
+@patch("utils.background_worker.GlobalMacroEngine")
+@patch("utils.background_worker.GlobalIssueTracker")
+@patch("utils.background_worker.DataAgent")
+@patch("utils.background_worker.load_lkv")
+@patch("utils.background_worker.save_lkv")
+@patch("time.sleep")
+def test_weather_string_parsing_to_dict(
+    mock_sleep,
+    mock_save_lkv,
+    mock_load_lkv,
+    mock_data_agent,
+    mock_issue_tracker,
+    mock_macro_engine,
+    mock_weather,
+    monkeypatch
+):
+    """실제 기상 문자열을 주입했을 때 temp가 실수형(float)으로 파싱 및 LKV에 적재되는지 검증"""
+    conn = db.get_db_connection()
+    conn.execute("INSERT OR IGNORE INTO regions (region_name, region_code) VALUES ('Seoul', 'KR-11')")
+    conn.commit()
+    conn.close()
+    
+    mock_load_lkv.return_value = {}
+    mock_weather.return_value = "Clear sky. Temperature: 22.5C, Humidity: 45%, Precipitation: 0.0mm (Mock Station 108)"
+    
+    def load_lkv_side_effect():
+        utils.background_worker._keep_running = False
+        return {}
+    mock_load_lkv.side_effect = load_lkv_side_effect
+    
+    utils.background_worker._keep_running = True
+    run_worker()
+    
+    saved_state = mock_save_lkv.call_args[0][0]
+    assert "South Korea" in saved_state
+    weather_dict = saved_state["South Korea"]["weather"]
+    assert isinstance(weather_dict, dict)
+    assert weather_dict["temp"] == 22.5
+    assert weather_dict["humidity"] == 45.0
+    assert weather_dict["precipitation"] == 0.0
+    assert weather_dict["weather_desc"] == "Clear sky"
+

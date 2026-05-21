@@ -25,6 +25,11 @@ public class RegionStandardizer {
         
         CODE_MAP.put("JP", "JP-EAST");
         CODE_MAP.put("JAPAN", "JP-EAST");
+
+        // 호남권 물류 센터 매핑
+        CODE_MAP.put("호남", "호남권물류CENTER-GLOBAL");
+        CODE_MAP.put("호남권물류", "호남권물류CENTER-GLOBAL");
+        CODE_MAP.put("호남권물류센터", "호남권물류CENTER-GLOBAL");
     }
 
     public String standardize(String rawInput) {

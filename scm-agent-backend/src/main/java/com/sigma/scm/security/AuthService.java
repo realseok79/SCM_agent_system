@@ -54,7 +54,7 @@ public class AuthService {
         );
         refreshTokenRepository.save(refreshToken);
 
-        return new JwtResponse(accessToken, rawRefreshToken, 900000); // 15분 만료
+        return new JwtResponse(accessToken, rawRefreshToken, 900000, user.getRole()); // 15분 만료
     }
 
     public JwtResponse refresh(RefreshTokenRequest request) {
@@ -95,7 +95,10 @@ public class AuthService {
         );
         refreshTokenRepository.save(newRefreshToken);
 
-        return new JwtResponse(newAccessToken, newRawRefreshToken, 900000);
+        User user = userRepository.findById(storedToken.getUserId())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        return new JwtResponse(newAccessToken, newRawRefreshToken, 900000, user.getRole());
     }
 
     private String sha256(String text) {

@@ -27,7 +27,7 @@ def generate_action_plan(
 
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, timeout=3.0)
         
         prompt = f"""
 [SCM Decision Rule Output]
