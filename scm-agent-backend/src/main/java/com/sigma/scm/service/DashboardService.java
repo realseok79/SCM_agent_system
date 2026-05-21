@@ -23,6 +23,7 @@ public class DashboardService {
     private final DailyDemandStatsRepository dailyDemandStatsRepository;
     private final StockOutLogRepository stockOutLogRepository;
     private final InventoryRebalancingOrderRepository rebalancingOrderRepository;
+    private final AuditLogRepository auditLogRepository;
 
     public Map<String, Object> getSummary() {
         Map<String, Object> summary = new HashMap<>();
@@ -33,9 +34,22 @@ public class DashboardService {
 
         long totalStockOutIncidents = stockOutLogRepository.count();
 
+        long totalSkuCount = inventories.stream()
+                .map(inv -> inv.getId().getProductName())
+                .distinct()
+                .count();
+
+        java.time.LocalDateTime oneDayAgo = java.time.LocalDateTime.now().minusDays(1);
+        double savedCostDelta = rebalancingOrderRepository.findAll().stream()
+                .filter(o -> o.getCreatedAt() != null && o.getCreatedAt().isAfter(oneDayAgo))
+                .mapToDouble(InventoryRebalancingOrder::getSavedCost)
+                .sum();
+
         summary.put("totalRegions", totalRegions);
         summary.put("totalStock", totalStock);
         summary.put("totalStockOutIncidents", totalStockOutIncidents);
+        summary.put("totalSkuCount", totalSkuCount);
+        summary.put("savedCostDelta", savedCostDelta);
         summary.put("systemStatus", "STABLE");
 
         return summary;
@@ -169,5 +183,34 @@ public class DashboardService {
                 .sorted((a, b) -> b.getId().getDate().compareTo(a.getId().getDate()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    public List<InventoryRebalancingOrder> getPendingRebalancingOrders() {
+        return rebalancingOrderRepository.findByStatus("PENDING");
+    }
+
+    @Transactional
+    public InventoryRebalancingOrder approveRebalancingOrder(Long transferId) {
+        InventoryRebalancingOrder order = rebalancingOrderRepository.findById(transferId)
+                .orElseThrow(() -> new IllegalArgumentException("Rebalancing order not found with ID: " + transferId));
+        order.setStatus("APPROVED");
+        auditLogRepository.save(new AuditLog("ORDER_APPROVED", 
+            "주문 #" + transferId + " (" + order.getProductName() + ", " + order.getTransferQty() + "개) 승인 완료", 
+            "SYSTEM_AGENT"));
+        return rebalancingOrderRepository.save(order);
+    }
+
+    @Transactional
+    public InventoryRebalancingOrder rejectRebalancingOrder(Long transferId, String reason) {
+        InventoryRebalancingOrder order = rebalancingOrderRepository.findById(transferId)
+                .orElseThrow(() -> new IllegalArgumentException("Rebalancing order not found with ID: " + transferId));
+        order.setStatus("REJECTED");
+        if (reason != null && !reason.trim().isEmpty()) {
+            order.setReason(reason);
+        }
+        auditLogRepository.save(new AuditLog("ORDER_REJECTED", 
+            "주문 #" + transferId + " 반려 완료. 사유: " + (reason != null ? reason : "없음"), 
+            "ADMIN_USER"));
+        return rebalancingOrderRepository.save(order);
     }
 }

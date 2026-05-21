@@ -107,3 +107,18 @@ def api_delete(endpoint):
     except Exception as e:
         print(f"API DELETE {endpoint} failed: {e}")
     return False
+
+def api_patch(endpoint, payload):
+    """
+    인증 헤더를 포함해 백엔드 API로부터 PATCH 요청을 보냅니다.
+    """
+    if not check_auth_or_refresh():
+        return None
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        res = requests.patch(f"{API_BASE_URL}{endpoint}", json=payload, headers=headers, timeout=10)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print(f"API PATCH {endpoint} failed: {e}")
+    return None

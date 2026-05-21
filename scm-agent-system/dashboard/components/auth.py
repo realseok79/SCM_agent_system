@@ -4,11 +4,17 @@ import auth_helper
 
 def render_login_page():
     st.markdown("""
-    <div style="text-align: center; padding: 2rem 0 1rem 0;">
-        <h1 style="font-size: 2.2rem; font-weight: 800; color: #8ab4f8; margin-bottom: 0.5rem; letter-spacing: -0.03em;">
+    <style>
+    /* Premium background radial gradient */
+    .stApp {
+        background: radial-gradient(circle at 50% 50%, #171923, #0a0b10) !important;
+    }
+    </style>
+    <div style="text-align: center; padding: 3rem 0 1rem 0;">
+        <h1 style="font-size: 2.5rem; font-weight: 800; color: #8ab4f8; margin-bottom: 0.5rem; letter-spacing: -0.03em; text-shadow: 0 0 30px rgba(138,180,248,0.25);">
             🛰️ SCM Agent Control Tower
         </h1>
-        <p style="color: #9aa0a6; font-size: 0.95rem; margin-bottom: 2rem;">
+        <p style="color: #a0aec0; font-size: 1rem; margin-bottom: 2rem; letter-spacing: 0.02em;">
             지능형 공급망 및 자율 재고 조율 시스템 관제탑
         </p>
     </div>
@@ -17,8 +23,8 @@ def render_login_page():
     c1, c2, c3 = st.columns([1, 1.3, 1])
     with c2:
         st.markdown("""
-        <div style="background: #292a2d; border: 1px solid #3c4043; border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); margin-bottom: 20px;">
-            <div style="font-size: 1.1rem; font-weight: 600; color: #e8eaed; margin-bottom: 15px;">로그인 인증</div>
+        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 28px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); margin-bottom: 20px;">
+            <div style="font-size: 1.15rem; font-weight: 700; color: #e2e8f0; margin-bottom: 18px; text-align: center; letter-spacing: 0.08em;">🔒 SECURE ACCESS LOGIN</div>
         """, unsafe_allow_html=True)
         
         with st.form("login_form", clear_on_submit=False):

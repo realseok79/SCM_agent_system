@@ -113,37 +113,143 @@ def render_regional_dashboard():
             uploaded_file = st.file_uploader("지역 재고 및 수요 이력 업로드", type=["csv", "xlsx", "xls"], key="regional_uploader")
             
             if uploaded_file is not None:
-                if "last_uploaded_file_name" not in st.session_state or st.session_state["last_uploaded_file_name"] != uploaded_file.name:
-                    st.session_state["last_uploaded_file_name"] = uploaded_file.name
-                    
-                    with st.spinner("⚡ 엑셀 데이터를 분석하고 거점별로 정합성을 검증하는 중입니다..."):
+                if "analyze_result" not in st.session_state or st.session_state.get("analyze_file_name") != uploaded_file.name:
+                    with st.spinner("⚡ 엑셀 데이터를 분석하고 스키마 매핑을 추론하는 중입니다..."):
                         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                         data = {"company_id": "SIGMA"}
                         headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
                         try:
-                            res = requests.post(f"{auth_helper.API_BASE_URL}/api/regions/upload", data=data, files=files, headers=headers, timeout=15)
+                            res = requests.post(f"{auth_helper.API_BASE_URL}/api/regions/upload/analyze", data=data, files=files, headers=headers, timeout=15)
                             if res.status_code == 200:
-                                res_json = res.json()
-                                st.session_state["upload_success"] = True
-                                
-                                new_regs = res_json.get("newlyRegisteredRegions", [])
-                                proc_regs = res_json.get("processedRegions", [])
-                                if new_regs:
-                                    st.session_state["auto_selected_region"] = new_regs[0]
-                                elif proc_regs:
-                                    st.session_state["auto_selected_region"] = proc_regs[0]
-                                
+                                st.session_state["analyze_result"] = res.json()
+                                st.session_state["analyze_file_bytes"] = uploaded_file.getvalue()
+                                st.session_state["analyze_file_name"] = uploaded_file.name
+                                st.session_state["analyze_file_type"] = uploaded_file.type
                                 st.rerun()
                             else:
                                 st.error(f"❌ 데이터 분석 실패: {res.text}")
                         except Exception as e:
                             st.error(f"❌ 분석 서버 연결 실패: {e}")
             else:
-                if "last_uploaded_file_name" in st.session_state:
-                    del st.session_state["last_uploaded_file_name"]
+                st.session_state.pop("analyze_result", None)
+                st.session_state.pop("analyze_file_bytes", None)
+                st.session_state.pop("analyze_file_name", None)
+                st.session_state.pop("analyze_file_type", None)
+
+            if "analyze_result" in st.session_state:
+                res_json = st.session_state["analyze_result"]
+                drift = res_json.get("driftScore", 0.0)
+                quality = res_json.get("qualityScore", 1.0)
+                mapping = res_json.get("mapping", {})
+                
+                st.markdown("### 🔍 AI 스키마 매핑 및 검증 프리뷰")
+                
+                # 지표 렌더링
+                met_col1, met_col2 = st.columns(2)
+                with met_col1:
+                    if drift >= 0.2:
+                        st.metric("⚠️ 스키마 드리프트 점수", f"{drift:.3f}", delta="경고: 비표준 헤더", delta_color="inverse")
+                    else:
+                        st.metric("✅ 스키마 드리프트 점수", f"{drift:.3f}", delta="정상: 규격 적합")
+                with met_col2:
+                    if quality < 0.9:
+                        st.metric("⚠️ 데이터 정합성 점수", f"{quality*100:.1f}%", delta="일부 행 경고/오류", delta_color="inverse")
+                    else:
+                        st.metric("✅ 데이터 정합성 점수", f"{quality*100:.1f}%", delta="정상 데이터")
+
+                # 미매핑 경고
+                unmapped_cols = [k for k, v in mapping.items() if not v]
+                if unmapped_cols:
+                    st.warning(f"🔴 **수동 매핑 필요**: SCM 표준 열에 매핑되지 않은 원본 헤더가 존재합니다: `{', '.join(unmapped_cols)}`")
+                
+                # 데이터 매핑 수동 편집기 (st.data_editor)
+                st.write("📋 **컬럼 매핑 확인 및 조정**")
+                mapping_data = []
+                for raw_col, std_col in mapping.items():
+                    mapping_data.append({
+                        "원본 컬럼": raw_col,
+                        "표준 SCM 컬럼 매핑": std_col if std_col else "미매핑"
+                    })
+                df_mapping = pd.DataFrame(mapping_data)
+                
+                edited_df = st.data_editor(
+                    df_mapping,
+                    column_config={
+                        "표준 SCM 컬럼 매핑": st.column_config.SelectboxColumn(
+                            "표준 SCM 컬럼 매핑",
+                            help="원본 엑셀 컬럼이 표준 SCM 데이터 규격의 어떤 열에 해당하는지 매핑합니다.",
+                            options=["region_code", "product_name", "date", "quantity", "미매핑"],
+                            required=True,
+                            width="medium"
+                        )
+                    },
+                    disabled=["원본 컬럼"],
+                    use_container_width=True,
+                    key="mapping_editor"
+                )
+                
+                # 데이터 미리보기
+                st.write("📄 **데이터 일부 프리뷰 (최대 10행)**")
+                preview_df = pd.DataFrame(res_json.get("previewRows", []), columns=res_json.get("columns", []))
+                st.dataframe(preview_df, use_container_width=True)
+
+                # 승인/반영 단추
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("🚀 AI 매핑 승인 및 최종 반영", use_container_width=True, type="primary"):
+                        confirmed_mapping = {}
+                        for _, r in edited_df.iterrows():
+                            raw = r["원본 컬럼"]
+                            std = r["표준 SCM 컬럼 매핑"]
+                            confirmed_mapping[raw] = None if std == "미매핑" else std
+                        
+                        with st.spinner("⚡ 최종 재고 반영 및 무결성 적재 중..."):
+                            import json
+                            files = {"file": (st.session_state["analyze_file_name"], st.session_state["analyze_file_bytes"], st.session_state["analyze_file_type"])}
+                            data = {
+                                "company_id": "SIGMA",
+                                "user_mapping": json.dumps(confirmed_mapping)
+                            }
+                            headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+                            try:
+                                confirm_res = requests.post(
+                                    f"{auth_helper.API_BASE_URL}/api/regions/upload/confirm",
+                                    data=data,
+                                    files=files,
+                                    headers=headers,
+                                    timeout=15
+                                )
+                                if confirm_res.status_code == 200:
+                                    st.session_state["upload_success"] = True
+                                    res_json_confirm = confirm_res.json()
+                                    new_regs = res_json_confirm.get("newlyRegisteredRegions", [])
+                                    proc_regs = res_json_confirm.get("processedRegions", [])
+                                    if new_regs:
+                                        st.session_state["auto_selected_region"] = new_regs[0]
+                                    elif proc_regs:
+                                        st.session_state["auto_selected_region"] = proc_regs[0]
+                                    
+                                    # 세션 정리
+                                    st.session_state.pop("analyze_result", None)
+                                    st.session_state.pop("analyze_file_bytes", None)
+                                    st.session_state.pop("analyze_file_name", None)
+                                    st.session_state.pop("analyze_file_type", None)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ 최종 반영 실패: {confirm_res.text}")
+                            except Exception as e:
+                                st.error(f"❌ 반영 서버 통신 실패: {e}")
+                
+                with col_btn2:
+                    if st.button("❌ 매핑 작업 취소", use_container_width=True):
+                        st.session_state.pop("analyze_result", None)
+                        st.session_state.pop("analyze_file_bytes", None)
+                        st.session_state.pop("analyze_file_name", None)
+                        st.session_state.pop("analyze_file_type", None)
+                        st.rerun()
 
             if st.session_state.get("upload_success"):
-                st.success("데이터 업로드 및 분석이 정상적으로 완료되었습니다.")
+                st.success("데이터 업로드 및 최종 반영이 완벽하게 완료되었습니다.")
                 del st.session_state["upload_success"]
 
     with col2:

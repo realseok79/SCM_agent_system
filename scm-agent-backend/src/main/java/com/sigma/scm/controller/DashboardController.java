@@ -67,6 +67,11 @@ public class DashboardController {
         return ResponseEntity.ok(dashboardService.getRebalancingOrders());
     }
 
+    @GetMapping("/pending-orders")
+    public ResponseEntity<List<com.sigma.scm.domain.InventoryRebalancingOrder>> getPendingOrders() {
+        return ResponseEntity.ok(dashboardService.getPendingRebalancingOrders());
+    }
+
     @PostMapping("/rebalancing-orders")
     public ResponseEntity<com.sigma.scm.domain.InventoryRebalancingOrder> createRebalancingOrder(
             @RequestBody com.sigma.scm.domain.InventoryRebalancingOrder order) {

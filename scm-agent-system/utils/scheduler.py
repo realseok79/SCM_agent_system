@@ -12,6 +12,7 @@ from utils.scoring_engine import LogisticsRiskScorer
 from agents.llm_diagnoser import generate_action_plan
 from utils.connectors.iot_simulator import IoTSensorSimulator
 from agents.enterprise_data_agent import TeamSigmaDataAgent
+from agents.iot_agent import run_iot_sensor_cycle
 
 logger = get_logger("SCM_Scheduler")
 
@@ -162,18 +163,34 @@ def daily_llm_insight_batch():
                 base_message=base_message
             )
             
-            # 3. DB에 UPSERT 적재 (새로 추가한 risk_score, risk_level, description 포함)
+            # 3. DB에 UPSERT 적재 (새로 추가한 risk_score, risk_level, description, source 포함)
+            import os
+            import requests
+            source_info = 'LLM' if os.getenv("OPENAI_API_KEY") else 'RULE_ENGINE'
             cursor.execute("""
-                INSERT INTO regional_insights (region_code, date, action_plan_msg, risk_score, risk_level, description, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO regional_insights (region_code, date, action_plan_msg, risk_score, risk_level, description, source, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(region_code, date) DO UPDATE SET
-                    action_plan_msg = excluded.action_plan_msg,
-                    risk_score = excluded.risk_score,
-                    risk_level = excluded.risk_level,
-                    description = excluded.description,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (r_code, today_str, action_plan_msg, r_total, r_level, r_desc))
+                	action_plan_msg = excluded.action_plan_msg,
+                	risk_score = excluded.risk_score,
+                	risk_level = excluded.risk_level,
+                	description = excluded.description,
+                	source = excluded.source,
+                	updated_at = CURRENT_TIMESTAMP
+            """, (r_code, today_str, action_plan_msg, r_total, r_level, r_desc, source_info))
             conn.commit()
+            
+            # 위험도 상승 시 Audit Log 전송
+            if r_level == "HIGH":
+                api_base = os.getenv("MOCK_API_HOST", "http://localhost:8080")
+                try:
+                    requests.post(f"{api_base}/api/audit-logs", json={
+                        "eventType": "RISK_ALERT",
+                        "message": f"🚨 [위험 감지] {r_name} 지점의 리스크 레벨이 HIGH로 상승했습니다. (점수: {r_total:.1f})",
+                        "triggeredBy": "SYSTEM_AGENT"
+                    }, timeout=3)
+                except Exception as ex:
+                    logger.error(f"❌ 위험 감지 감사 로그 전송 실패: {ex}")
             
             logger.info(f"  ✅ {r_name} SCM AI 처방 및 리스크 지표 업데이트 완료")
             success_count += 1
@@ -189,6 +206,7 @@ def start_scheduler():
     백그라운드 스케줄러를 시작합니다.
     - 매일 오전 6시 정각에 일일 배치를 실행합니다.
     - 추가로 기동 즉시 최초 1회 갱신을 실행합니다.
+    - 5초 주기로 ACTIVE IoT 디바이스 텔레메트리 스트림 수집을 실행합니다.
     """
     scheduler = BackgroundScheduler()
     
@@ -211,11 +229,21 @@ def start_scheduler():
         id='daily_llm_insight_job',
         replace_existing=True
     )
+
+    # 5초 주기로 IoT 센서 스트림 수집 등록
+    scheduler.add_job(
+        run_iot_sensor_cycle,
+        trigger='interval',
+        seconds=5,
+        id='iot_telemetry_ingest_job',
+        replace_existing=True
+    )
     
     scheduler.start()
-    logger.info("⏰ APScheduler 백그라운드 스케줄러가 성공적으로 가동되었습니다. (일일 배치: 매일 오전 6시)")
+    logger.info("⏰ APScheduler 백그라운드 스케줄러가 가동되었습니다. (일일 배치 & 5초 주기 IoT 수집)")
     
-    # 최초 기동 시 비동기로 1회 강제 실행 (캐시 초기화)
+    # 최초 기동 시 비동기로 1회 강제 실행 (캐시 초기화 & IoT 수집 즉시 1회)
+    run_iot_sensor_cycle()
     daily_weather_batch(force_refresh=False)
     daily_llm_insight_batch()
     

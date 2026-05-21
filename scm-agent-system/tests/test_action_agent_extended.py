@@ -88,6 +88,19 @@ def test_execute_single_cross_docking_and_substitution(tmp_path, monkeypatch):
     order_json_path = tmp_path / "order_list.json"
     monkeypatch.setattr("os.path.exists", lambda path: False)
     
+    # Mock the REST API client post
+    from agents.api_client import client
+    monkeypatch.setattr(client, "post", lambda url, payload: {
+        "rebalancedQty": 50.0,
+        "transfers": [
+            {
+                "fromRegion": "BusanHub",
+                "transferQty": 50.0,
+                "savedCost": 500000
+            }
+        ]
+    })
+    
     agent = ActionAgent()
     
     # 부산 지점의 200개 잉여 재고 중 90일치 안전망(1 * 90 = 90개)을 뺀 110개 전송 가능

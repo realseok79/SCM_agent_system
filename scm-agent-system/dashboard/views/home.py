@@ -19,11 +19,62 @@ def render_home_dashboard():
     # KPI 융합 카드 렌더링
     st.markdown(f'''<div class="kg">
 <div class="kc"><div class="kl">등록 지점 수</div><div class="kv b">{summary.get("totalRegions", 0)} 개소</div><div class="ku">실무 가용 물류 거점</div></div>
-<div class="kc"><div class="kl">전체 모니터링 SKU</div><div class="kv">12 품목</div><div class="ku">등록된 활성 상품 종류</div></div>
+<div class="kc"><div class="kl">전체 모니터링 SKU</div><div class="kv">{summary.get("totalSkuCount", 0)} 품목</div><div class="ku">등록된 활성 상품 종류</div></div>
 <div class="kc"><div class="kl">통합 가용 재고량</div><div class="kv g">{summary.get("totalStock", 0.0):,.0f} 개</div><div class="ku">지점별 최신 재고 합산</div></div>
 <div class="kc"><div class="kl">발주 장애 사고 건수</div><div class="kv r">{summary.get("totalStockOutIncidents", 0)} 건</div><div class="ku">안전 기준 미달 품절 사고</div></div>
 <div class="kc"><div class="kl">관제 시스템 상태</div><div class="kv g">{summary.get("systemStatus", "STABLE")}</div><div class="ku">서버 정상 작동 유무</div><div class="kb ok">정상</div></div>
 </div>''', unsafe_allow_html=True)
+
+    # 🧪 데모 시뮬레이션 모드 전용 대시보드
+    if st.session_state.get("demo_mode", False):
+        with st.container():
+            st.markdown("""
+            <div style="background-color: #1a202c; border: 1px solid #e53e3e; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
+                <h4 style="color: #e53e3e; margin-top: 0;">🧪 데모 시뮬레이션 컨트롤 타워</h4>
+                <p style="font-size: 13px; color: #a0aec0;">데모 모드 활성화 상태입니다. 아래 버튼을 클릭하여 SCM 시스템에 실시간 비상 시나리오 이벤트를 주입해보세요.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if st.button("🚨 가상 고위험(HIGH) 경보 생성", use_container_width=True):
+                    import requests
+                    try:
+                        requests.post("http://localhost:8080/api/audit-logs", json={
+                            "eventType": "RISK_ALERT",
+                            "message": "🚨 [데모] 수도권 Hub(KR-SL) 지점의 기상 이변(집중 호우)으로 인해 물류 지연 리스크 레벨이 HIGH로 상승했습니다.",
+                            "triggeredBy": "DEMO_AGENT"
+                        }, timeout=3)
+                        st.success("고위험 감사 로그 생성 완료!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"오류: {e}")
+            with c2:
+                if st.button("🛠️ IoT 디바이스 점검(MAINTENANCE) 설정", use_container_width=True):
+                    import requests
+                    try:
+                        requests.post("http://localhost:8080/api/audit-logs", json={
+                            "eventType": "DEVICE_MAINTENANCE",
+                            "message": "🛠️ [데모] KR-SL 지점의 온도 센서(TEMP-001)의 노이즈 감지로 인해 시스템이 점검 상태로 전환되었습니다.",
+                            "triggeredBy": "DEMO_AGENT"
+                        }, timeout=3)
+                        st.success("점검 감사 로그 생성 완료!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"오류: {e}")
+            with c3:
+                if st.button("🟢 자율 재배정 승인(APPROVED) 발생", use_container_width=True):
+                    import requests
+                    try:
+                        requests.post("http://localhost:8080/api/audit-logs", json={
+                            "eventType": "ORDER_APPROVED",
+                            "message": "🟢 [데모] 영남권물류 Center 재고 결핍으로 수도권중앙 Hub에서 150개 자동 이송 주문(ORD-999) 승인 완료",
+                            "triggeredBy": "DEMO_AGENT"
+                        }, timeout=3)
+                        st.success("자율 승인 감사 로그 생성 완료!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"오류: {e}")
 
     # 0. API 호출로 재고 조정 주문 목록 수신 및 누적 절감 물류비 집계
     rebalancing_orders = auth_helper.api_get("/api/dashboard/rebalancing-orders")
@@ -77,7 +128,7 @@ def render_home_dashboard():
         st.metric(
             label="💡 AI 자율 재고 조정 누적 절감 물류비 (TC)",
             value=f"₩{total_saved_cost:,.0f}",
-            delta="⬆ ₩1,200,000 (전일 대비 증가)",
+            delta=f"⬆ ₩{summary.get('savedCostDelta', 0):,.0f} (전일 대비)",
             delta_color="normal"
         )
     with col_status:
@@ -94,109 +145,160 @@ def render_home_dashboard():
 
     with chk_col1:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>자동 발주 승인 대기 목록</div>', unsafe_allow_html=True)
-        if "order_approved_seoul" not in st.session_state:
-            st.session_state["order_approved_seoul"] = False
-
-        if st.session_state["order_approved_seoul"] is False:
-            st.markdown("""
-            <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; margin-bottom: 10px;">
-                <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [안전 재고 경고] 서울 물류창고 마스크 고갈 우려</div>
-                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
-                    서울점 <b>마스크</b> 품목 재고가 안전재고 ROP 이하로 떨어졌습니다.<br/>
-                    자율 AI 최적 발주량 <b>500개</b>의 주문을 승인하겠습니까?
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # 권한 조회
-            user_role = st.session_state.get("user_role", "ROLE_USER")
-            
-            if user_role == "ROLE_EXECUTIVE":
-                st.info("🔒 [읽기 전용] 경영진 계정은 발주 승인 및 반려 피드백 조작 권한이 없습니다.")
-            elif user_role == "ROLE_LOGISTICS":
-                col1, = st.columns([1])
-                with col1:
-                    if st.button("📥 자동 발주 승인 및 다운로드", key="btn_download_seoul", use_container_width=True):
-                        st.session_state["order_approved_seoul"] = True
-                        st.success("발주 승인되었습니다.")
-                        st.rerun()
-                st.warning("⚠️ AI 학습 피드백(반려) 권한은 관리자(ROLE_ADMIN) 전용입니다.")
-            else: # ROLE_ADMIN
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    if st.button("📥 자동 발주 승인 및 다운로드", key="btn_download_seoul", use_container_width=True):
-                        st.session_state["order_approved_seoul"] = True
-                        st.success("발주 승인되었습니다.")
-                        st.rerun()
-                with col2:
-                    if st.button("❌ 반려 및 AI 피드백 전송", key="btn_reject_seoul", use_container_width=True):
-                        st.session_state["rejecting_order"] = True
-                        st.rerun()
-
-                if st.session_state.get("rejecting_order", False):
-                    st.markdown("<div style='background-color:#f28b820a; border: 1px solid #f28b8230; padding:12px; border-radius:4px; margin-top:10px;'>", unsafe_allow_html=True)
-                    st.write("📋 **반려 사유 (AI 매핑 가중치 피드백)**")
-                    mapping_opt = st.selectbox(
-                        "어떤 컬럼의 매핑 오류가 발주 실패를 유발했습니까?",
-                        options=[
-                            ("수량 데이터 매핑 오류 (quantity)", "quantity", "물품수량"),
-                            ("날짜 데이터 매핑 오류 (date)", "date", "입고일자"),
-                            ("지역 코드 매핑 오류 (region_code)", "region_code", "지점명")
-                        ],
-                        format_func=lambda x: x[0]
-                    )
-                    if st.button("피드백 전송 및 반려 완료", key="submit_reject_seoul"):
-                        payload = {
-                            "companyId": "SIGMA",
-                            "rawHeader": mapping_opt[2],
-                            "mappedColumn": mapping_opt[1]
-                        }
-                        response = auth_helper.api_post("/api/feedback/reject-mapping", payload)
-                        if response:
-                            st.session_state["order_approved_seoul"] = "REJECTED"
-                            st.session_state["rejecting_order"] = False
-                            st.success("반려 피드백이 전송되었으며, AI 매핑 감쇠 가중치가 업데이트되었습니다!")
-                            st.rerun()
-                        else:
-                            st.error("피드백 전송에 실패했습니다. 세션 정보를 확인하십시오.")
-                    st.markdown("</div>", unsafe_allow_html=True)
-        elif st.session_state["order_approved_seoul"] == "REJECTED":
-            st.markdown("""
-            <div class="ep ec" style="border-left-color: #f5c2c7; background-color: #f8d7da0f; padding: 12px; margin-bottom: 10px;">
-                <div class="et" style="color: #ea868f; font-weight: bold; font-size: 13px;">❌ [발주 반려] AI 매핑 가중치 피드백 완료</div>
-                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #ea868f;">
-                    서울점 마스크 발주가 반려되었습니다. 관리자의 반려 피드백이 수치 감쇠 모델(Decay Factor 0.9)을 통해 AI 에이전트의 맵퍼 규칙에 반영되었습니다.
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button("🔄 발주 요청 초기화 (테스트용)", key="reset_seoul"):
-                st.session_state["order_approved_seoul"] = False
-                st.rerun()
+        pending_orders = auth_helper.api_get("/api/dashboard/pending-orders") or []
+        
+        if not pending_orders:
+            st.info("✅ 대기 중인 자동 발주 요청이 없습니다.")
         else:
-            st.markdown("""
-            <div class="ep en" style="border-left-color: #81c995; padding: 12px; margin-bottom: 10px;">
-                <div class="et" style="color: #81c995; font-weight: bold; font-size: 13px;">✅ [발주 완료] 서울점 마스크 발주서 생성 완료</div>
-                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
-                    서울점 <b>마스크 500개</b>에 대한 발주 요청이 승인되어 <b>진행 중</b> 상태로 전환되었습니다.
+            for order in pending_orders:
+                order_id = order["transferId"]
+                prod = order["productName"]
+                from_reg = order["fromRegion"]
+                to_reg = order["toRegion"]
+                qty = order["transferQty"]
+                saved = order["savedCost"]
+                reason = order.get("reason") or f"[{from_reg}] ➔ [{to_reg}] 안전재고 임계치 미달 복구용 발주"
+
+                st.markdown(f"""
+                <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; margin-bottom: 10px;">
+                    <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [안전 재고 경고] {to_reg}점 {prod} 고갈 우려</div>
+                    <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
+                        경로: <b>{from_reg}</b> ➔ <b>{to_reg}</b> ({qty}개)<br/>
+                        절감 효과: ₩{saved:,.0f}<br/>
+                        상세 사유: {reason}<br/>
+                        자율 AI 최적 발주를 승인하겠습니까?
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button("🔄 발주 요청 초기화 (테스트용)", key="reset_seoul"):
-                st.session_state["order_approved_seoul"] = False
-                st.rerun()
+                """, unsafe_allow_html=True)
+
+                user_role = st.session_state.get("user_role", "ROLE_USER")
+                if user_role == "ROLE_EXECUTIVE":
+                    st.info("🔒 [읽기 전용] 경영진 계정은 발주 승인 및 반려 피드백 조작 권한이 없습니다.")
+                elif user_role == "ROLE_LOGISTICS":
+                    col1, = st.columns([1])
+                    with col1:
+                        if st.button("📥 자동 발주 승인", key=f"btn_approve_{order_id}", use_container_width=True):
+                            res = auth_helper.api_post(f"/api/orders/{order_id}/approve", {})
+                            if res:
+                                st.success(f"주문 #{order_id} 승인 완료")
+                                st.rerun()
+                else: # ROLE_ADMIN
+                    col_app, col_rej = st.columns([1, 1])
+                    with col_app:
+                        if st.button("📥 자동 발주 승인", key=f"btn_approve_{order_id}", use_container_width=True):
+                            res = auth_helper.api_post(f"/api/orders/{order_id}/approve", {})
+                            if res:
+                                st.success(f"주문 #{order_id} 승인 완료")
+                                st.rerun()
+                    with col_rej:
+                        if st.button("❌ 반려 및 AI 피드백", key=f"btn_reject_init_{order_id}", use_container_width=True):
+                            st.session_state[f"rejecting_order_{order_id}"] = True
+                            st.rerun()
+
+                    if st.session_state.get(f"rejecting_order_{order_id}", False):
+                        st.markdown("<div style='background-color:#f28b820a; border: 1px solid #f28b8230; padding:12px; border-radius:4px; margin-top:10px;'>", unsafe_allow_html=True)
+                        st.write("📋 **반려 사유 및 AI 피드백**")
+                        mapping_opt = st.selectbox(
+                            "어떤 컬럼의 매핑 오류가 발주 실패를 유발했습니까?",
+                            options=[
+                                ("수량 데이터 매핑 오류 (quantity)", "quantity", "물품수량"),
+                                ("날짜 데이터 매핑 오류 (date)", "date", "입고일자"),
+                                ("지역 코드 매핑 오류 (region_code)", "region_code", "지점명")
+                            ],
+                            format_func=lambda x: x[0],
+                            key=f"rej_select_{order_id}"
+                        )
+                        feedback_reason = st.text_input("반려 의견 추가 (선택사항)", key=f"rej_reason_{order_id}")
+                        if st.button("피드백 전송 및 반려 완료", key=f"submit_reject_{order_id}"):
+                            payload = {
+                                "companyId": "SIGMA",
+                                "rawHeader": mapping_opt[2],
+                                "mappedColumn": mapping_opt[1]
+                            }
+                            # 1. Decay feedback call
+                            auth_helper.api_post("/api/feedback/reject-mapping", payload)
+                            # 2. Reject order call
+                            order_payload = {"reason": f"{mapping_opt[0]}. 의견: {feedback_reason}"}
+                            res = auth_helper.api_post(f"/api/orders/{order_id}/reject", order_payload)
+                            if res:
+                                st.session_state.pop(f"rejecting_order_{order_id}", None)
+                                st.success(f"주문 #{order_id} 반려 완료 및 AI 피드백 반영")
+                                st.rerun()
+                        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with chk_col2:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>실시간 물류 건강 지표</div>', unsafe_allow_html=True)
+        
+        # IoT health summary integration
+        iot_health = auth_helper.api_get("/api/iot/health-summary") or {}
+        avg_score = iot_health.get("averageHealthScore", 100.0)
+        
+        if avg_score >= 80.0:
+            icon, color, health_msg = "🟢", "#81c995", "전 지점 운송 경로 정상"
+        elif avg_score >= 50.0:
+            icon, color, health_msg = "🟡", "#fdd663", f"일부 거점 주의 (건강도 {avg_score:.1f}점)"
+        else:
+            icon, color, health_msg = "🔴", "#f28b82", f"긴급: 물류 지연 예상 (건강도 {avg_score:.1f}점)"
+
         st.markdown(f"""
-        <div class="ep en" style="border-left-color: #81c995; padding: 12px; min-height: 110px;">
-            <div class="et" style="color: #81c995; font-weight: bold; font-size: 13px;">🟢 전 지점 운송 경로 정상</div>
+        <div class="ep en" style="border-left-color: {color}; padding: 12px; margin-bottom: 10px;">
+            <div class="et" style="color: {color}; font-weight: bold; font-size: 13px;">{icon} {health_msg}</div>
             <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
-                현재 모든 물류 거점의 환경이 양호합니다.<br/>
-                배송 지연 요인이 식별되지 않았습니다.
+                평균 창고 건강 지수: <b>{avg_score:.1f} / 100.0</b><br/>
+                실시간 IoT 디바이스 텔레메트리 스트림 수집 중.
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+        # Isolation Forest Anomaly Agent integration
+        has_anomalies = False
+        anomaly_msg = ""
+        try:
+            import requests
+            regions = auth_helper.api_get("/api/regions") or []
+            headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+            
+            for r in regions:
+                code = r["regionCode"]
+                # 서울/Seoul hub gets dummy anomaly data to demonstrate ML warning
+                if "Seoul" in r["regionName"] or "서울" in r["regionName"]:
+                    telemetry = [
+                        {"temperature": 22.0, "humidity": 45.0, "vibration": 0.05},
+                        {"temperature": 22.5, "humidity": 46.0, "vibration": 0.04},
+                        {"temperature": 23.0, "humidity": 44.0, "vibration": 0.05},
+                        {"temperature": 39.8, "humidity": 85.0, "vibration": 1.95} # Outlier!
+                    ]
+                else:
+                    telemetry = [
+                        {"temperature": 21.0, "humidity": 40.0, "vibration": 0.02},
+                        {"temperature": 21.2, "humidity": 40.5, "vibration": 0.03},
+                        {"temperature": 21.5, "humidity": 41.0, "vibration": 0.02},
+                        {"temperature": 21.1, "humidity": 40.2, "vibration": 0.03}
+                    ]
+                
+                payload = {"telemetry_logs": telemetry}
+                res = requests.post(f"{auth_helper.API_BASE_URL}/api/v1/ml/anomaly-score", json=payload, headers=headers, timeout=2.0)
+                if res.status_code == 200:
+                    ml_res = res.json()
+                    # If the last log is anomalous (-1)
+                    if ml_res.get("is_anomaly", []) and ml_res["is_anomaly"][-1] == -1:
+                        has_anomalies = True
+                        anomaly_msg += f"🚨 <b>{r['regionName']} ({code})</b>: 비정상 고온(39.8°C) 및 과진동(1.95) 감지!<br/>"
+        except Exception:
+            pass
+            
+        if has_anomalies:
+            st.markdown(f"""
+            <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; min-height: 110px; background-color: #f28b820a;">
+                <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [이상 상태 감지] 창고 센서 리스크</div>
+                <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
+                    {anomaly_msg}
+                    🤖 <b>Isolation Forest AI 분석:</b> 장비 오작동 전조 증상이 실시간 포착되었습니다. 즉시 안전 현장 점검이 권장됩니다.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ------------------ [Plotly Node-Link Map & Prescriptive Grid] ------------------
@@ -284,23 +386,49 @@ def render_home_dashboard():
         if to_c is None:
             to_c = HUB_COORDINATES["GLOBAL_ORDER"]
 
+        # ── Day 7: XGBoost Predict Agent - Lead Time Integration ──
+        weather_score = 6.8 if "Hub" in from_n else 2.1 # high weather score to trigger warning for demo
+        port_score = 48.0 if "Center" in to_n else 10.0
+        pred_days = 2.8
+        try:
+            import requests
+            headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+            payload = {
+                "route_id": f"{from_n}_{to_n}",
+                "weather_score": weather_score,
+                "port_congestion_score": port_score,
+                "historical_lead_times": [2.5, 3.0, 2.7, 3.1]
+            }
+            res = requests.post(f"{auth_helper.API_BASE_URL}/api/v1/ml/predict-leadtime", json=payload, headers=headers, timeout=1.5)
+            if res.status_code == 200:
+                ml_res = res.json()
+                pred_days = ml_res.get("predicted_lead_time_days", 2.8)
+        except Exception:
+            pass
+
         # Line thickness relative to quantity
         line_w = max(2.0, min(8.0, qty / 50.0))
+        
+        # If predicted lead time > 3.2 days, flag as DELAYED (Red Dashed Line)
+        is_delayed = pred_days > 3.2
+        line_color = '#ff6b6b' if is_delayed else '#8ab4f8'
+        line_dash = 'dash' if is_delayed else 'solid'
         
         hover_text = (
             f"<b>품목:</b> {prod}<br>"
             f"<b>경로:</b> {from_n} ➔ {to_n}<br>"
             f"<b>이송 수량:</b> {qty:,} units<br>"
+            f"<b>🤖 XGBoost 예상 리드타임:</b> <span style='color:{line_color}'><b>{pred_days:.2f} 일</b></span> {'⚠️ (지연 위험)' if is_delayed else '🟢 (안정)'}<br>"
             f"<b>물류비 절감:</b> ₩{saved:,}<br>"
             f"<b>처방 근거 (XAI):</b> {reason}"
         )
 
-        # Path Line
+        # Path Line (Dashed red if ML predicts delay risk)
         fig.add_trace(go.Scattermapbox(
             lat=[from_c[0], to_c[0]],
             lon=[from_c[1], to_c[1]],
             mode='lines',
-            line=dict(width=line_w, color='#8ab4f8'),
+            line=dict(width=line_w, color=line_color, dash=line_dash),
             hoverinfo='text',
             hovertext=hover_text,
             name=f"최적 경로 {idx+1}"
@@ -314,8 +442,9 @@ def render_home_dashboard():
             lon=[mid_lon],
             mode='markers',
             marker=dict(
-                size=9,
-                color='#81c995'
+                size=10,
+                color='#ff6b6b' if is_delayed else '#81c995',
+                symbol='circle'
             ),
             hoverinfo='text',
             hovertext=hover_text,

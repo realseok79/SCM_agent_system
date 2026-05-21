@@ -30,6 +30,9 @@ public class RegionalInsight {
     @Column(name = "description", length = 255)
     private String description;
 
+    @Column(name = "source", length = 50)
+    private String source = "RULE_ENGINE";
+
     @Column(name = "updated_at")
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

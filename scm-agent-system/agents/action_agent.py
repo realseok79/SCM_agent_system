@@ -241,60 +241,7 @@ class ActionAgent:
                 for transfer in transfers:
                     logger.info(f"🔄 [REST Cross-docking] {transfer.get('fromRegion')} 지점에서 {transfer.get('transferQty')}개 간선 이동 대체. (절감액: ₩{transfer.get('savedCost', 0):,})")
         except Exception as e:
-            logger.warning(f"⚠️ 백엔드 API /api/dashboard/rebalance 호출 실패 ({e}) - SQLite 로컬 폴백 작동")
-
-        if not api_success:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # 최신 재고 일자 가져오기
-            cursor.execute("SELECT MAX(date) FROM region_inventory")
-            max_date_row = cursor.fetchone()
-            max_date = max_date_row[0] if max_date_row else None
-            
-            if max_date:
-                cursor.execute("""
-                    SELECT i.region_code, i.quantity, d.moving_avg_30d
-                    FROM region_inventory i
-                    JOIN daily_demand_stats d ON i.region_code = d.region_code AND i.product_name = d.product_name AND i.date = d.date
-                    WHERE i.product_name = ? AND i.date = ?
-                """, (item_name, max_date))
-                
-                rows = cursor.fetchall()
-                for row in rows:
-                    i_curr = row["quantity"]
-                    d_avg = row["moving_avg_30d"]
-                    from_region = row["region_code"]
-                    
-                    # 수학적 트리거 (DoS > 90 and I_curr >= 100)
-                    if d_avg > 0:
-                        dos = i_curr / d_avg
-                        if dos > 90.0 and i_curr >= 100.0:
-                            # 잉여 수량: 90일치 안전망을 남기고 전송 가능한 수량
-                            surplus = i_curr - (d_avg * 90.0)
-                            transfer_qty = min(surplus, quantity - rebalanced_qty)
-                            
-                            if transfer_qty > 0:
-                                # 단가 조회하여 절감된 신규 조달 원가(saved_cost) 산출
-                                cursor.execute("SELECT unit_price FROM product_financial_master WHERE product_name = ?", (item_name,))
-                                fin_row = cursor.fetchone()
-                                unit_price = fin_row["unit_price"] if fin_row else 10000
-                                saved_cost = transfer_qty * unit_price
-                                
-                                # inventory_rebalancing_orders 에 기록
-                                cursor.execute("""
-                                    INSERT INTO inventory_rebalancing_orders 
-                                    (product_name, from_region, to_region, transfer_qty, saved_cost, status)
-                                    VALUES (?, ?, ?, ?, ?, 'APPROVED')
-                                """, (item_name, from_region, "GLOBAL_ORDER", transfer_qty, saved_cost))
-                                
-                                rebalanced_qty += transfer_qty
-                                logger.info(f"🔄 [SQLite Cross-docking] {from_region} 지점에서 {transfer_qty:.0f}개 간선 이동 대체. (절감액: ₩{saved_cost:,})")
-                                
-                                if rebalanced_qty >= quantity:
-                                    break
-                conn.commit()
-            conn.close()
+            logger.error(f"❌ 백엔드 API /api/dashboard/rebalance 호출 실패 ({e}) - 간선 이동 대체 불가")
         
         # 대수적 삭감 (Substitution)
         final_po_qty = quantity - rebalanced_qty

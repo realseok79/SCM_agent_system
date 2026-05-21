@@ -17,19 +17,44 @@ public class IngestionController {
 
     private final IngestionPipelineService ingestionPipelineService;
 
-    @PostMapping("/upload")
-    public ResponseEntity<Map<String, Object>> uploadSpreadsheet(
+    @PostMapping("/upload/analyze")
+    public ResponseEntity<Map<String, Object>> analyzeSpreadsheet(
             @RequestParam("company_id") String companyId,
             @RequestParam("file") MultipartFile file) {
         
         try {
-            log.info("[UPLOAD] Received file '{}' ({} bytes) for company '{}'",
+            log.info("[ANALYZE] Received file '{}' ({} bytes) for company '{}'",
                     file.getOriginalFilename(), file.getSize(), companyId);
-            Map<String, Object> result = ingestionPipelineService.ingestSpreadsheet(companyId, file, "SYSTEM");
-            log.info("[UPLOAD] Ingestion complete. Result: {}", result);
+            Map<String, Object> result = ingestionPipelineService.analyzeSpreadsheet(companyId, file);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            log.error("[UPLOAD] Ingestion failed for file '{}': {}", file.getOriginalFilename(), e.getMessage(), e);
+            log.error("[ANALYZE] Failed for file '{}': {}", file.getOriginalFilename(), e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(
+                Map.of("error", e.getMessage() != null ? e.getMessage() : "Unknown error",
+                       "status", "FAILED")
+            );
+        }
+    }
+
+    @PostMapping("/upload/confirm")
+    public ResponseEntity<Map<String, Object>> confirmSpreadsheet(
+            @RequestParam("company_id") String companyId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("user_mapping") String userMappingJson) {
+        
+        try {
+            log.info("[CONFIRM] Received file '{}' for company '{}' with overrides",
+                    file.getOriginalFilename(), companyId);
+            
+            // ObjectMapper could be used here to parse JSON, or we can just pass the string to the service and let it parse it
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<String, String> userMapping = mapper.readValue(userMappingJson, new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>(){});
+            
+            Map<String, Object> result = ingestionPipelineService.confirmSpreadsheet(companyId, file, "SYSTEM", userMapping);
+            log.info("[CONFIRM] Ingestion complete. Result: {}", result);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("[CONFIRM] Ingestion failed for file '{}': {}", file.getOriginalFilename(), e.getMessage(), e);
             return ResponseEntity.internalServerError().body(
                 Map.of("error", e.getMessage() != null ? e.getMessage() : "Unknown error",
                        "status", "FAILED")

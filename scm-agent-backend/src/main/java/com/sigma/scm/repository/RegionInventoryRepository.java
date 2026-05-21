@@ -13,6 +13,9 @@ public interface RegionInventoryRepository extends JpaRepository<RegionInventory
     List<RegionInventory> findByIdRegionCodeAndIdDate(String regionCode, String date);
     void deleteBySourceBatchId(String sourceBatchId);
 
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT r.id.regionCode FROM RegionInventory r")
+    List<String> findDistinctRegionCodes();
+
     @org.springframework.data.jpa.repository.Query(value = "SELECT MAX(date) FROM region_inventory", nativeQuery = true)
     String findMaxDate();
 

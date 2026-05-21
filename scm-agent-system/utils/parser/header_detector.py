@@ -1,15 +1,31 @@
 # utils/parser/header_detector.py
+import os
+import yaml
 import pandas as pd
 from typing import Tuple
 
-COLUMN_ALIASES = {
+DEFAULT_COLUMN_ALIASES = {
     "region_code": ["지점", "지역", "지역명", "region", "regionname", "location", "branch", "region_code", "regioncode"],
     "product_name": ["상품명", "상품이름", "품목", "품목명", "product", "productname", "producttitle", "product_title", "item", "product_name"],
-    "quantity": ["수량", "개수", "양", "quantity", "qty", "count", "amount"],
-    "date": ["날짜", "일자", "기준일", "date", "datetime", "day"],
+    "quantity": ["수량", "개수", "양", "물품수량", "quantity", "qty", "count", "amount"],
+    "date": ["날짜", "일자", "기준일", "입고날짜", "date", "datetime", "day"],
     "company_id": ["회사", "회사id", "company", "companyid", "company_id", "companyid"],
     "warehouse_code": ["창고", "창고코드", "warehouse", "warehousecode", "warehouse_code", "warehousecode"]
 }
+
+def load_column_aliases() -> dict:
+    config_path = "config/unstructured_parse_rules.yaml"
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if data and "column_aliases" in data:
+                    return data["column_aliases"]
+        except Exception as e:
+            print(f"Warning: Failed to load unstructured_parse_rules.yaml: {e}")
+    return DEFAULT_COLUMN_ALIASES
+
+COLUMN_ALIASES = load_column_aliases()
 
 def clean_value(val) -> str:
     if pd.isna(val) or val is None:

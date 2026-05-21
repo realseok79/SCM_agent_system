@@ -19,7 +19,14 @@ def render_risk_dashboard():
             bg_color = "#f28b820f" if level == "HIGH" else "#81c9950f"
             
             insight = auth_helper.api_get(f"/api/dashboard/region/{code}/insight")
-            insight_msg = f"<br/><b>🤖 LLM 최적 처방 (XAI):</b> {insight.get('actionPlanMsg')}" if insight and insight.get('actionPlanMsg') else ""
+            badge_html = ""
+            if insight:
+                source = insight.get("source", "RULE_ENGINE")
+                if source == "LLM":
+                    badge_html = '<span style="background-color: #8a3ffc; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">🤖 AI Diagnosed</span>'
+                else:
+                    badge_html = '<span style="background-color: #0043ce; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">⚙️ Rule Engine</span>'
+            insight_msg = f"<br/><b>🤖 LLM 최적 처방 (XAI):</b> {insight.get('actionPlanMsg')} {badge_html}" if insight and insight.get('actionPlanMsg') else ""
 
             import re
             desc_text = risk.get('description', '')

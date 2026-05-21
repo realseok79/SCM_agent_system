@@ -30,3 +30,10 @@ openai
 # ── Testing ──
 pytest
 pytest-cov
+
+# ── ML & Feature Store ──
+scikit-learn
+xgboost
+sentence-transformers
+prophet
+redis

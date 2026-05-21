@@ -203,6 +203,10 @@ def upload_region_inventory(file: UploadFile = File(...)):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
+# ── ML Agent Router ──
+from agents.ml_agent import router as ml_router
+app.include_router(ml_router)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
