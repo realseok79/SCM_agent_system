@@ -10,6 +10,7 @@ import com.sigma.scm.repository.ItemMasterRepository;
 import com.sigma.scm.repository.ProductFinancialMasterRepository;
 import com.sigma.scm.repository.RegionInventoryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Component
+@Primary
 @RequiredArgsConstructor
 public class ItemPersistenceAdapter implements LoadItemPort {
 

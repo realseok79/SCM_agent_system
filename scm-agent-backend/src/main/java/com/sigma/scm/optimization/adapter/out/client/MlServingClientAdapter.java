@@ -5,6 +5,7 @@ import com.sigma.scm.optimization.domain.model.OptimizationItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -14,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Component
+@Primary
 @RequiredArgsConstructor
 @Slf4j
 public class MlServingClientAdapter implements CallMlServingPort {

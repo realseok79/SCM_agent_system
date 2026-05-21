@@ -6,12 +6,14 @@ import com.sigma.scm.optimization.application.port.out.SaveInferenceLogPort;
 import com.sigma.scm.optimization.domain.model.ReorderDecision;
 import com.sigma.scm.repository.MlInferenceLogRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
 @Component
+@Primary
 @RequiredArgsConstructor
 public class SaveInferenceLogAdapter implements SaveInferenceLogPort {
 
