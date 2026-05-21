@@ -101,9 +101,9 @@ public class OptimizationEngineTest {
                 .orderingCostFixed(10.0)
                 .build();
         double eoqZeroH = engine.calculateEOQ(freeHoldingItem, 10.0);
-        // Annual demand = 3650.0, s = 10.0. H = 1.0 (fallback).
-        // EOQ = sqrt(2 * 3650 * 10 / 1.0) = sqrt(73000) = 270.185
-        assertEquals(270.185, eoqZeroH, 0.01);
+        // Annual demand = 3650.0, s = 10.0. H = 0.1 (fallback).
+        // EOQ = sqrt(2 * 3650 * 10 / 0.1) = sqrt(730000) = 854.400
+        assertEquals(854.400, eoqZeroH, 0.01);
 
         // 3. Negatives check
         OptimizationItem negativeItem = OptimizationItem.builder()

@@ -15,7 +15,7 @@ public class OptimizationEngine {
         double s = Math.max(0.0, item.getOrderingCostFixed());
         double h = Math.max(0.0, item.getUnitPrice()) * Math.max(0.0, item.getHoldingCostRate());
         if (h <= 0.0) {
-            h = 1.0; // Prevent division by zero
+            h = 0.1; // Prevent division by zero, normalized clipping to 0.1
         }
         double eoq = Math.sqrt((2.0 * annualDemand * s) / h);
         return Double.isNaN(eoq) || Double.isInfinite(eoq) ? 0.0 : eoq;

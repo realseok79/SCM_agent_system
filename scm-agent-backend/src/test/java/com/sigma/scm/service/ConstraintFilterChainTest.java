@@ -88,4 +88,30 @@ public class ConstraintFilterChainTest {
         assertEquals(10.0, chain.process(negativeConstrainedItem, 10.0));
         assertEquals(0.0, chain.process(negativeConstrainedItem, -5.0));
     }
+
+    @Test
+    public void testStepFunctionLotSizeBoundaries() {
+        ConstraintFilter moqFilter = new MoqFilter();
+        ConstraintFilter lotSizeFilter = new LotSizeFilter();
+        ConstraintFilterChain chain = new ConstraintFilterChain(Arrays.asList(moqFilter, lotSizeFilter));
+
+        // Lot Size = 500.0, MOQ = 0.0
+        OptimizationItem largeLotItem = OptimizationItem.builder()
+                .productName("LargeLotItem")
+                .minOrderQty(0.0)
+                .lotSize(500.0)
+                .build();
+
+        // 1. 499.0일 때 올림 연산으로 500.0이 되는지 검증 (좌극한 부근)
+        assertEquals(500.0, chain.process(largeLotItem, 499.0));
+
+        // 2. 정확히 500.0일 때 500.0이 되는지 검증 (경계값)
+        assertEquals(500.0, chain.process(largeLotItem, 500.0));
+
+        // 3. 500.1일 때 올림 연산으로 1000.0이 되는지 검증 (우극한 부근)
+        assertEquals(1000.0, chain.process(largeLotItem, 500.1));
+        
+        // 4. 0.1일 때 올림 연산으로 500.0이 되는지 검증
+        assertEquals(500.0, chain.process(largeLotItem, 0.1));
+    }
 }
