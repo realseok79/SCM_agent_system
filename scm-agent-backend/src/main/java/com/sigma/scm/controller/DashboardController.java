@@ -59,4 +59,28 @@ public class DashboardController {
             @PathVariable("code") String regionCode) {
         return ResponseEntity.ok(dashboardService.getAging(regionCode));
     }
+
+    @GetMapping("/pending-orders")
+    public ResponseEntity<List<com.sigma.scm.domain.PurchaseOrder>> getPendingOrders() {
+        return ResponseEntity.ok(dashboardService.getPendingOrders());
+    }
+
+    @PostMapping("/orders/{id}/approve")
+    public ResponseEntity<com.sigma.scm.domain.PurchaseOrder> approveOrder(
+            @PathVariable("id") Long id) {
+        return ResponseEntity.ok(dashboardService.approveOrder(id));
+    }
+
+    @PostMapping("/orders/{id}/reject")
+    public ResponseEntity<com.sigma.scm.domain.PurchaseOrder> rejectOrder(
+            @PathVariable("id") Long id,
+            @RequestBody Map<String, String> body) {
+        String reason = body != null ? body.getOrDefault("reason", "반려 사유 미지정") : "반려 사유 미지정";
+        return ResponseEntity.ok(dashboardService.rejectOrder(id, reason));
+    }
+
+    @GetMapping("/financials")
+    public ResponseEntity<List<com.sigma.scm.domain.ProductFinancialMaster>> getFinancialMaster() {
+        return ResponseEntity.ok(dashboardService.getFinancialMaster());
+    }
 }

@@ -1,12 +1,21 @@
-# Build stage
-FROM gradle:8.7-jdk17 AS build
+FROM eclipse-temurin:17-jdk-alpine AS build
 WORKDIR /app
-COPY --chown=gradle:gradle . .
-RUN gradle build --no-daemon -x test
 
-# Package stage
+# Gradle Wrapper 복사 및 의존성 캐싱
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle .
+COPY settings.gradle .
+RUN chmod +x gradlew && ./gradlew dependencies --no-daemon 2>/dev/null || true
+
+# 소스 복사 및 빌드
+COPY src src
+RUN ./gradlew bootJar --no-daemon -x test
+
+# 런타임
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY --from=build /app/build/libs/scm-agent-backend-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build /app/build/libs/*.jar app.jar
+
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -204,6 +204,10 @@ def init_db():
             );
         """)
         conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_stock_out_logs_composite 
+            ON stock_out_logs (timestamp, region_code, product_name);
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS inventory_rebalancing_orders (
                 transfer_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 product_name TEXT NOT NULL,
@@ -269,6 +273,38 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS purchase_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                region_code TEXT NOT NULL,
+                product_name TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                rejection_reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS guardrail_parameters (
+                sku TEXT PRIMARY KEY,
+                current_threshold REAL NOT NULL DEFAULT 1.0,
+                base_threshold REAL NOT NULL DEFAULT 1.0,
+                min_clip_rate REAL NOT NULL DEFAULT 0.5,
+                max_clip_rate REAL NOT NULL DEFAULT 1.5,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS order_feedback_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                sku TEXT NOT NULL,
+                action TEXT NOT NULL,
+                reason TEXT,
+                applied INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
         conn.commit()
         
         # Seeding default data
@@ -313,6 +349,18 @@ def init_db():
             cursor.executemany(
                 "INSERT INTO product_financial_master (product_name, unit_price, holding_cost_per_day) VALUES (?, ?, ?)",
                 financial_seeds
+            )
+            
+        cursor.execute("SELECT COUNT(*) FROM guardrail_parameters")
+        if cursor.fetchone()[0] == 0:
+            default_guardrails = [
+                ("마스크", 1.0, 1.0, 0.5, 1.5),
+                ("반도체 칩", 1.0, 1.0, 0.5, 1.5),
+                ("종합 품목", 1.0, 1.0, 0.5, 1.5)
+            ]
+            cursor.executemany(
+                "INSERT INTO guardrail_parameters (sku, current_threshold, base_threshold, min_clip_rate, max_clip_rate) VALUES (?, ?, ?, ?, ?)",
+                default_guardrails
             )
         conn.commit()
     except Exception as e:

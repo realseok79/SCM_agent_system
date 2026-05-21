@@ -101,18 +101,18 @@ def daily_llm_insight_batch():
         # 국가 매핑
         code_upper = str(r_code).upper()
         if code_upper.startswith("KR-"):
-            country = "South Korea"
+             country = "South Korea"
         elif code_upper.startswith("US-"):
-            country = "United States"
+             country = "United States"
         elif code_upper.startswith("CN-"):
-            country = "China"
+             country = "China"
         elif code_upper.startswith("JP-"):
-            country = "Japan"
+             country = "Japan"
         elif code_upper.startswith("GB-"):
-            country = "United Kingdom"
+             country = "United Kingdom"
         else:
-            country = "South Korea"
-            
+             country = "South Korea"
+             
         country_data = lkv_state.get(country, {})
         raw_weather = country_data.get("weather", "[Fallback] 대체 기상 정보")
         data_vector = country_data.get("macro", {"oil_change_pct": 0.0, "inflation_rate": 2.0, "index_change_pct": 0.0, "fx_change_pct": 0.0})
@@ -163,10 +163,48 @@ def daily_llm_insight_batch():
     conn.close()
     logger.info(f"🏁 [AI 처방 배치 종료] 성공: {success_count}건, 실패: {fail_count}건 (기준일: {today_str})")
 
+def weekly_calibration_batch():
+    """
+    매주 반려된 발주 사유를 분석하고 가드레일 임계치 파라미터를 보정 연산하는 배치 작업.
+    """
+    logger.info("⚙️ [주간 캘리브레이션 배치 시작] 반려 사유 기반 AI 가드레일 파라미터 보정 중...")
+    
+    # 1. 2단계 Commit 안정망: purchase_orders 내 반려 기록 중 order_feedback_log에 빠진 건 수집하여 선행 동기화
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, product_name, rejection_reason FROM purchase_orders 
+            WHERE status = 'REJECTED'
+              AND id NOT IN (SELECT order_id FROM order_feedback_log)
+        """)
+        missing_rows = cursor.fetchall()
+        for r in missing_rows:
+            order_id, sku, reason = r["id"], r["product_name"], r["rejection_reason"]
+            cursor.execute("""
+                INSERT INTO order_feedback_log (order_id, sku, action, reason, applied)
+                VALUES (?, ?, 'REJECTED', ?, 0)
+            """, (order_id, sku, reason))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"❌ 캘리브레이션 동기화 실패: {e}")
+    finally:
+        conn.close()
+        
+    # 2. FeedbackEngine을 통한 보정 및 Bounding Clip 실행
+    try:
+        from agents.feedback_engine import FeedbackEngine
+        engine = FeedbackEngine()
+        processed = engine.process_pending_feedbacks()
+        logger.info(f"🏁 [주간 캘리브레이션 배치 종료] 총 {processed}건의 대기 중인 가드레일 피드백이 연산 반영되었습니다.")
+    except Exception as e:
+        logger.error(f"❌ 가드레일 보정 루프 연산 중 치명적 예외 발생: {e}")
+
 def start_scheduler():
     """
     백그라운드 스케줄러를 시작합니다.
     - 매일 오전 6시 정각에 일일 배치를 실행합니다.
+    - 매주 월요일 오전 1시 정각에 주간 캘리브레이션을 실행합니다.
     - 추가로 기동 즉시 최초 1회 갱신을 실행합니다.
     """
     scheduler = BackgroundScheduler()
@@ -191,12 +229,24 @@ def start_scheduler():
         replace_existing=True
     )
     
-    scheduler.start()
-    logger.info("⏰ APScheduler 백그라운드 스케줄러가 성공적으로 가동되었습니다. (일일 배치: 매일 오전 6시)")
+    # 매주 월요일 01:00 AM 실행 크론 설정 (AI 가드레일 파라미터 캘리브레이션)
+    scheduler.add_job(
+        weekly_calibration_batch,
+        trigger='cron',
+        day_of_week='mon',
+        hour=1,
+        minute=0,
+        id='weekly_calibration_job',
+        replace_existing=True
+    )
     
-    # 최초 기동 시 비동기로 1회 강제 실행 (캐시 초기화)
+    scheduler.start()
+    logger.info("⏰ APScheduler 백그라운드 스케줄러가 성공적으로 가동되었습니다. (일일 배치: 매일 오전 6시, 주간 배치: 매주 월요일 오전 1시)")
+    
+    # 최초 기동 시 비동기로 1회 강제 실행 (캐시 초기화 및 피드백 보정 즉시 적용)
     daily_weather_batch(force_refresh=False)
     daily_llm_insight_batch()
+    weekly_calibration_batch()
     
     return scheduler
 

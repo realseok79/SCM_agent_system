@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +24,7 @@ public class DashboardService {
     private final RegionalInsightRepository regionalInsightRepository;
     private final DailyDemandStatsRepository dailyDemandStatsRepository;
     private final StockOutLogRepository stockOutLogRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
 
     public Map<String, Object> getSummary() {
         Map<String, Object> summary = new HashMap<>();
@@ -119,7 +122,22 @@ public class DashboardService {
         riskResult.put("regionCode", regionCode);
         riskResult.put("riskScore", score);
         riskResult.put("riskLevel", riskLevel);
-        riskResult.put("description", severeWeather ? "기상 악화 경보: 운송 지연이 감지되었습니다." : "정상 상태: 운송 지연 위험도가 낮습니다.");
+        
+        String desc = severeWeather ? "기상 악화 경보: 운송 지연이 감지되었습니다." : "정상 상태: 운송 지연 위험도가 낮습니다.";
+        riskResult.put("description", desc);
+
+        // 추가: regional_insights 테이블에서 지점의 가장 최신 한 줄 처방(Action Plan) 조회
+        List<RegionalInsight> insights = regionalInsightRepository.findByIdRegionCode(regionCode);
+        if (insights != null && !insights.isEmpty()) {
+            // 날짜 또는 업데이트 역순 정렬하여 최신건 가져옴
+            RegionalInsight latest = insights.stream()
+                    .sorted((a, b) -> b.getId().getDate().compareTo(a.getId().getDate()))
+                    .findFirst()
+                    .orElse(null);
+            if (latest != null) {
+                riskResult.put("actionPlan", latest.getActionPlanMsg());
+            }
+        }
 
         return riskResult;
     }
@@ -138,5 +156,53 @@ public class DashboardService {
                 })
                 .sorted((a, b) -> ((String) a.get("date")).compareTo((String) b.get("date")))
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public List<PurchaseOrder> getPendingOrders() {
+        List<PurchaseOrder> list = purchaseOrderRepository.findByStatus("PENDING");
+        if (list.isEmpty()) {
+            // 시연용 기본 PENDING 발주 데이터를 동적으로 자동 생성 (시연 안전성 확보)
+            PurchaseOrder seoulOrder = new PurchaseOrder();
+            seoulOrder.setRegionCode("SEOUL");
+            seoulOrder.setProductName("마스크");
+            seoulOrder.setQuantity(500.0);
+            seoulOrder.setStatus("PENDING");
+            seoulOrder.setCreatedAt(LocalDateTime.now());
+            purchaseOrderRepository.save(seoulOrder);
+
+            PurchaseOrder busanOrder = new PurchaseOrder();
+            busanOrder.setRegionCode("BUSAN");
+            busanOrder.setProductName("반도체 칩");
+            busanOrder.setQuantity(100.0);
+            busanOrder.setStatus("PENDING");
+            busanOrder.setCreatedAt(LocalDateTime.now());
+            purchaseOrderRepository.save(busanOrder);
+
+            list = purchaseOrderRepository.findByStatus("PENDING");
+        }
+        return list;
+    }
+
+    @Transactional
+    public PurchaseOrder approveOrder(Long id) {
+        PurchaseOrder order = purchaseOrderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found with id: " + id));
+        order.setStatus("APPROVED");
+        order.setRejectionReason(null);
+        return purchaseOrderRepository.save(order);
+    }
+
+    @Transactional
+    public PurchaseOrder rejectOrder(Long id, String reason) {
+        PurchaseOrder order = purchaseOrderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found with id: " + id));
+        order.setStatus("REJECTED");
+        order.setRejectionReason(reason);
+        return purchaseOrderRepository.save(order);
+    }
+
+    public List<ProductFinancialMaster> getFinancialMaster() {
+        return productFinancialMasterRepository.findAll();
     }
 }

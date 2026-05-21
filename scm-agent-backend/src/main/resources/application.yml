@@ -1,4 +1,7 @@
 spring:
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:} # 환경변수로부터 키 로딩, 없으면 Fallback 작동
   profiles:
     active: dev # 기본적으로 개발 프로파일(dev) 활성화
   application:
@@ -34,8 +37,3 @@ scm:
     speed-seconds: 300.0
   analysis-service-url: http://localhost:8090
 
-# OpenAI & Spring AI 설정 (LLM 모듈용)
-spring:
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:} # 환경변수로부터 키 로딩, 없으면 Fallback 작동

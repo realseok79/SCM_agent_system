@@ -18,6 +18,7 @@ public class LkvState {
     @EmbeddedId
     private LkvStateId id;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     @Column(name = "state_data", nullable = false, columnDefinition = "jsonb")
     private String stateData = "{}";
 

@@ -27,5 +27,18 @@ public class IngestionController {
             return ResponseEntity.internalServerError().build();
         }
     }
+
+    @PostMapping("/upload/confirm")
+    public ResponseEntity<Map<String, Object>> confirmSpreadsheet(
+            @RequestParam("batch_id") String batchId,
+            @RequestBody(required = false) Map<String, String> userOverrides) {
+        
+        try {
+            Map<String, Object> result = ingestionPipelineService.confirmSpreadsheet(batchId, userOverrides, "SYSTEM");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 }
 

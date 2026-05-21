@@ -26,6 +26,7 @@ public class IngestionPipelineService {
     private final BatchStatusHistoryRepository batchStatusHistoryRepository;
     private final StagingInventoryImportRepository stagingInventoryImportRepository;
     private final ExcelParseLogRepository excelParseLogRepository;
+    private final RegionInventoryRepository regionInventoryRepository;
     
     private final HeaderDetector headerDetector;
     private final SemanticMapper semanticMapper;
@@ -275,6 +276,21 @@ public class IngestionPipelineService {
         response.put("batchId", batchId);
         response.put("driftScore", driftScore);
         response.put("qualityScore", qualityScore);
+        response.put("mapping", mapping);
+
+        List<StagingInventoryImport> savedStaging = stagingInventoryImportRepository.findByImportBatchId(batchId);
+        List<Map<String, Object>> previewRows = new ArrayList<>();
+        for (StagingInventoryImport stg : savedStaging) {
+            Map<String, Object> rowMap = new HashMap<>();
+            rowMap.put("regionCode", stg.getRegionCode());
+            rowMap.put("productName", stg.getProductName());
+            rowMap.put("date", stg.getDate());
+            rowMap.put("quantity", stg.getQuantity());
+            rowMap.put("validationStatus", stg.getValidationStatus());
+            rowMap.put("sourceRowIndex", stg.getSourceRowIndex());
+            previewRows.add(rowMap);
+        }
+        response.put("previewRows", previewRows);
 
         if (driftScore < 0.2 && !valResult.hasCritical && !valResult.hasError) {
             String reasonText = "Bypass automatic approval: perfect schema alignment with zero hard validation errors.";
@@ -310,6 +326,52 @@ public class IngestionPipelineService {
         }
 
         return response;
+    }
+
+    @Transactional
+    public Map<String, Object> confirmSpreadsheet(String batchId, Map<String, String> userOverrides, String changedBy) {
+        ImportBatch batch = importBatchRepository.findById(batchId)
+                .orElseThrow(() -> new SaeieException.ConflictException("Batch " + batchId + " not found."));
+
+        BatchStatus currentStatus = BatchStatus.valueOf(batch.getStatus());
+        int version = batch.getVersion();
+
+        // REVIEW_REQUIRED 라면 APPROVED 로 수동 전환을 먼저 수행한 뒤 COMMITTED 로 전이
+        if (currentStatus == BatchStatus.REVIEW_REQUIRED) {
+            version = transitionBatchStatus(
+                batchId, BatchStatus.APPROVED, version, BatchStatus.REVIEW_REQUIRED,
+                changedBy, "Manually approved and overrides validated."
+            );
+        }
+
+        // APPROVED -> COMMITTED 상태 전이
+        transitionBatchStatus(
+            batchId, BatchStatus.COMMITTED, version, BatchStatus.APPROVED,
+            changedBy, "Batch integrated to RegionInventory."
+        );
+
+        // StagingInventoryImport에서 VALID 상태의 임시 데이터들을 RegionInventory 실재고 테이블로 적재 (UPSERT)
+        List<StagingInventoryImport> stgList = stagingInventoryImportRepository.findByImportBatchId(batchId);
+        int committedCount = 0;
+
+        for (StagingInventoryImport stg : stgList) {
+            if ("VALID".equals(stg.getValidationStatus())) {
+                RegionInventoryId invId = new RegionInventoryId(stg.getRegionCode(), stg.getProductName(), stg.getDate());
+                RegionInventory inv = regionInventoryRepository.findById(invId).orElse(new RegionInventory());
+                inv.setId(invId);
+                inv.setQuantity(stg.getQuantity());
+                inv.setSourceBatchId(batchId);
+                inv.setUpdatedAt(LocalDateTime.now());
+                regionInventoryRepository.save(inv);
+                committedCount++;
+            }
+        }
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("batchId", batchId);
+        res.put("status", BatchStatus.COMMITTED.name());
+        res.put("committedCount", committedCount);
+        return res;
     }
 
     private void parseCsv(InputStream is, List<String> originalColumns, List<List<String>> rows) throws Exception {

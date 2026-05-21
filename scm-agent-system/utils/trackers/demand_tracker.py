@@ -24,6 +24,28 @@ def log_stock_out(region_code: str, product_name: str, outbound_qty: float, tran
     finally:
         conn.close()
 
+def log_stock_out_bulk(logs: list[dict]) -> bool:
+    """
+    출고 트랜잭션 목록을 Bulk Insert(executemany) 방식으로 일괄 기록하는 함수
+    """
+    if not logs:
+        return True
+        
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT INTO stock_out_logs (region_code, product_name, outbound_qty, transaction_type, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        """, [(log["region_code"], log["product_name"], log["outbound_qty"], log.get("transaction_type", "정상출고"), log["timestamp"]) for log in logs])
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"❌ [log_stock_out_bulk] 에러 발생: {e}")
+        return False
+    finally:
+        conn.close()
+
 def aggregate_daily_demand(target_date_str: str = None) -> bool:
     """
     특정 날짜(기본값: 오늘)의 출고 데이터를 집계하여 daily_demand_stats 테이블에 적재하고,

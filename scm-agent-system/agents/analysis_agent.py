@@ -56,17 +56,16 @@ def clip_outlier(data: list[float], sigma_multiplier: float = 3.0) -> list[float
 
 def detect_overdispersion(demands: list[float]) -> tuple[bool, float]:
     """
-    과산포(Overdispersion) 감지: V(X) > E(X) 조건 검사.
-
-    포아송 분포는 E(X) == V(X) 를 전제한다.
-    실제 시장 데이터에서 분산이 기댓값을 초과하면 음이항 분포로 전환해야 한다.
+    분산 대 평균 비율(VMR = σ² / μ)을 활용한 동적 확률 분포 라우팅.
+    - VMR <= 1.15 인 품목 (수요 변동성이 일정한 A등급 품목): 포아송(Poisson) 분포 적용.
+    - VMR > 1.15 인 품목 (과대분산이 발생하는 간헐적 수요의 B, C등급 품목): 음이항(Negative Binomial) 분포 동적 전환.
 
     Args:
         demands: 클리핑 완료된 일일 수요 데이터
 
     Returns:
         (is_overdispersed, overdispersion_ratio)
-        overdispersion_ratio = V(X) / E(X)  → 1.0 이하면 포아송 적합
+        overdispersion_ratio = V(X) / E(X)
     """
     arr = np.array(demands, dtype=float)
     mean_d = np.mean(arr)
@@ -74,7 +73,8 @@ def detect_overdispersion(demands: list[float]) -> tuple[bool, float]:
     if mean_d <= 0:
         return False, 1.0
     ratio = var_d / mean_d
-    return ratio > 1.0, ratio
+    is_overdispersed = ratio > 1.15
+    return is_overdispersed, ratio
 
 
 def compute_demand_lambda(demands: list[float], shock_index: float) -> float:
