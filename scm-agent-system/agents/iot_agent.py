@@ -51,5 +51,8 @@ def run_iot_sensor_cycle():
         else:
             logger.error(f"❌ Telemetry ingestion failed: HTTP {post_res.status_code} - {post_res.text}")
 
+    except requests.exceptions.ConnectionError:
+        # Spring Boot 백엔드가 오프라인 상태일 때의 연결 거부는 로그를 스팸하지 않고 침묵 처리합니다.
+        pass
     except Exception as e:
         logger.error(f"❌ IoT Sensor Cycle Error: {e}")
