@@ -1,0 +1,24 @@
+{
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  },
+  "name": "scm_agent_system",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/realseok79/SCM_agent_system.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/realseok79/SCM_agent_system/issues"
+  },
+  "homepage": "https://github.com/realseok79/SCM_agent_system#readme"
+}
