@@ -99,8 +99,8 @@ def read_sheets_auto_header(file_bytes: bytes) -> Dict[str, pd.DataFrame]:
     
     for sheet_name in sheet_names:
         try:
-            # Read first 15 rows to detect header
-            preview_df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, nrows=15, header=None)
+            # Read first 50 rows to detect header safely
+            preview_df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, nrows=50, header=None)
             if preview_df.empty:
                 continue
                 

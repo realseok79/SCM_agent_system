@@ -1,1 +1,2 @@
-from utils.engine.scoring_engine import LogisticsRiskScorer
+from utils.scoring_engine import LogisticsRiskScorer
+
