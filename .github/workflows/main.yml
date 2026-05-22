@@ -27,10 +27,10 @@ jobs:
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python 3.11
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -56,16 +56,16 @@ jobs:
         python -m pytest --cov=./ --cov-report=xml --cov-fail-under=80 tests/
 
     - name: Upload Code Coverage Results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: code-coverage-report
         path: scm-agent-system/coverage.xml
 
     - name: Setup Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
 
     - name: Dry-Run Build ML Serving Image
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: ./scm-agent-system/Dockerfile.api
@@ -73,7 +73,7 @@ jobs:
         tags: scm-ml-api:latest
 
     - name: Dry-Run Build Dashboard Image
-      uses: docker/build-push-action@v4
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: ./scm-agent-system/Dockerfile
