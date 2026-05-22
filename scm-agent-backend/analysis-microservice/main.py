@@ -1,11 +1,16 @@
 # analysis-microservice/main.py
 import math
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from scipy import stats
 from scipy.optimize import minimize_scalar
+from dotenv import load_dotenv
+import excel_parser
+
+# Load env files
+load_dotenv()
 
 app = FastAPI(title="SCM Ingestion & Analysis Microservice", version="1.0")
 
@@ -209,3 +214,31 @@ def analyze_batch(request: BatchAnalysisRequest):
         "minTotalCost": round(min_tc, 2),
         "alert": "NORMAL"
     }
+
+@app.post("/analyze/excel/llm")
+async def analyze_excel_llm(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        result = excel_parser.analyze_excel_file(contents)
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/clean/excel")
+async def clean_excel(file: UploadFile = File(...), user_mapping: str = Form(...)):
+    try:
+        import json
+        contents = await file.read()
+        mapping_dict = json.loads(user_mapping)
+        csv_str = excel_parser.generate_cleaned_csv(contents, mapping_dict)
+        return {
+            "status": "SUCCESS",
+            "cleaned_csv": csv_str
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+

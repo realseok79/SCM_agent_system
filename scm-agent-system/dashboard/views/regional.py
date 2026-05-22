@@ -114,12 +114,10 @@ def render_regional_dashboard():
             
             if uploaded_file is not None:
                 if "analyze_result" not in st.session_state or st.session_state.get("analyze_file_name") != uploaded_file.name:
-                    with st.spinner("⚡ 엑셀 데이터를 분석하고 스키마 매핑을 추론하는 중입니다..."):
+                    with st.spinner("⚡ AI (Gemini 3.1 Flash-Lite)가 엑셀의 시트와 헤더 시작점을 지능적으로 탐색하는 중입니다..."):
                         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        data = {"company_id": "SIGMA"}
-                        headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
                         try:
-                            res = requests.post(f"{auth_helper.API_BASE_URL}/api/regions/upload/analyze", data=data, files=files, headers=headers, timeout=15)
+                            res = requests.post("http://localhost:8090/analyze/excel/llm", files=files, timeout=30)
                             if res.status_code == 200:
                                 st.session_state["analyze_result"] = res.json()
                                 st.session_state["analyze_file_bytes"] = uploaded_file.getvalue()
@@ -203,40 +201,57 @@ def render_regional_dashboard():
                             std = r["표준 SCM 컬럼 매핑"]
                             confirmed_mapping[raw] = None if std == "미매핑" else std
                         
-                        with st.spinner("⚡ 최종 재고 반영 및 무결성 적재 중..."):
+                        with st.spinner("⚡ AI 데이터 클렌징 및 최종 재고 반영 중..."):
                             import json
-                            files = {"file": (st.session_state["analyze_file_name"], st.session_state["analyze_file_bytes"], st.session_state["analyze_file_type"])}
-                            data = {
-                                "company_id": "SIGMA",
-                                "user_mapping": json.dumps(confirmed_mapping)
-                            }
-                            headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
                             try:
-                                confirm_res = requests.post(
-                                    f"{auth_helper.API_BASE_URL}/api/regions/upload/confirm",
-                                    data=data,
-                                    files=files,
-                                    headers=headers,
-                                    timeout=15
-                                )
-                                if confirm_res.status_code == 200:
-                                    st.session_state["upload_success"] = True
-                                    res_json_confirm = confirm_res.json()
-                                    new_regs = res_json_confirm.get("newlyRegisteredRegions", [])
-                                    proc_regs = res_json_confirm.get("processedRegions", [])
-                                    if new_regs:
-                                        st.session_state["auto_selected_region"] = new_regs[0]
-                                    elif proc_regs:
-                                        st.session_state["auto_selected_region"] = proc_regs[0]
-                                    
-                                    # 세션 정리
-                                    st.session_state.pop("analyze_result", None)
-                                    st.session_state.pop("analyze_file_bytes", None)
-                                    st.session_state.pop("analyze_file_name", None)
-                                    st.session_state.pop("analyze_file_type", None)
-                                    st.rerun()
+                                # 1단계: FastAPI를 통한 비정형 데이터 정제 및 병합 (Clean)
+                                clean_files = {"file": (st.session_state["analyze_file_name"], st.session_state["analyze_file_bytes"], st.session_state["analyze_file_type"])}
+                                clean_data = {"user_mapping": json.dumps(confirmed_mapping)}
+                                clean_res = requests.post("http://localhost:8090/clean/excel", files=clean_files, data=clean_data, timeout=25)
+                                
+                                if clean_res.status_code != 200:
+                                    st.error(f"❌ AI 데이터 클렌징 실패: {clean_res.text}")
                                 else:
-                                    st.error(f"❌ 최종 반영 실패: {confirm_res.text}")
+                                    cleaned_csv_str = clean_res.json().get("cleaned_csv", "")
+                                    
+                                    # 2단계: 정제 완료된 완전 표준 규격 CSV를 Java 백엔드에 다이렉트 전송
+                                    files = {"file": ("cleaned_data.csv", cleaned_csv_str.encode("utf-8"), "text/csv")}
+                                    data = {
+                                        "company_id": "SIGMA",
+                                        "user_mapping": json.dumps({
+                                            "region_code": "region_code",
+                                            "product_name": "product_name",
+                                            "date": "date",
+                                            "quantity": "quantity"
+                                        })
+                                    }
+                                    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+                                    
+                                    confirm_res = requests.post(
+                                        f"{auth_helper.API_BASE_URL}/api/regions/upload/confirm",
+                                        data=data,
+                                        files=files,
+                                        headers=headers,
+                                        timeout=15
+                                    )
+                                    if confirm_res.status_code == 200:
+                                        st.session_state["upload_success"] = True
+                                        res_json_confirm = confirm_res.json()
+                                        new_regs = res_json_confirm.get("newlyRegisteredRegions", [])
+                                        proc_regs = res_json_confirm.get("processedRegions", [])
+                                        if new_regs:
+                                            st.session_state["auto_selected_region"] = new_regs[0]
+                                        elif proc_regs:
+                                            st.session_state["auto_selected_region"] = proc_regs[0]
+                                        
+                                        # 세션 정리
+                                        st.session_state.pop("analyze_result", None)
+                                        st.session_state.pop("analyze_file_bytes", None)
+                                        st.session_state.pop("analyze_file_name", None)
+                                        st.session_state.pop("analyze_file_type", None)
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ 최종 반영 실패: {confirm_res.text}")
                             except Exception as e:
                                 st.error(f"❌ 반영 서버 통신 실패: {e}")
                 
