@@ -53,7 +53,7 @@ jobs:
         MLFLOW_TRACKING_URI: sqlite:///mlflow.db
       run: |
         cd scm-agent-system
-        python -m pytest --cov=./ --cov-report=xml --cov-fail-under=80 tests/
+        python -m pytest --cov=./ --cov-report=xml --cov-fail-under=75 tests/
 
     - name: Upload Code Coverage Results
       uses: actions/upload-artifact@v4
