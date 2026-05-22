@@ -17,22 +17,23 @@ from models import (
 # 데이터베이스 테이블 초기화
 init_db()
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── 백그라운드 스케줄러 라이프사이클 관리 ──
+    from utils.scheduler import start_scheduler
+    app.state.scheduler = start_scheduler()
+    yield
+    if hasattr(app.state, "scheduler"):
+        app.state.scheduler.shutdown()
+
 app = FastAPI(
     title="SCM Region & Data Pipeline Core API",
     description="사용자 및 SCM 지역 관리, 엑셀/CSV 데이터 파이프라인 처리를 위한 코어 API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
-
-# ── 백그라운드 스케줄러 라이프사이클 관리 ──
-@app.on_event("startup")
-def startup_event():
-    from utils.scheduler import start_scheduler
-    app.state.scheduler = start_scheduler()
-
-@app.on_event("shutdown")
-def shutdown_event():
-    if hasattr(app.state, "scheduler"):
-        app.state.scheduler.shutdown()
 
 # CORS 미들웨어 추가
 app.add_middleware(

@@ -250,7 +250,7 @@ def predict_lead_time(req: LeadTimePredictionRequest):
     )
     
     # ── Latency Tuning: Cache Store (TTL: 300s) ──
-    feature_store.set_feature(cache_key, res_obj.dict(), expire_seconds=300)
+    feature_store.set_feature(cache_key, res_obj.model_dump(), expire_seconds=300)
     return res_obj
 
 
@@ -347,7 +347,7 @@ def predict_demand(req: DemandForecastRequest):
         res_obj = DemandForecastResponse(ds=ds, yhat=yhat, yhat_lower=yhat_lower, yhat_upper=yhat_upper)
         
     # ── Latency Tuning: Cache Store (TTL: 300s) ──
-    feature_store.set_feature(cache_key, res_obj.dict(), expire_seconds=300)
+    feature_store.set_feature(cache_key, res_obj.model_dump(), expire_seconds=300)
     return res_obj
 
 # ── New Hybrid SCM Demand & XAI Prediction Endpoints ──

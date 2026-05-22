@@ -1,7 +1,7 @@
 # utils/parser/validation_engine.py
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from models import standardize_region
 from utils.parser.exceptions import ValidationPayloadTooLargeError
 
@@ -52,7 +52,7 @@ def validate_rows(
     has_error = False
     has_warning = False
     
-    now_naive = datetime.utcnow()
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     
     for idx, row in df.iterrows():
         row_dict = row.to_dict()
