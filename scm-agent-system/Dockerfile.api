@@ -20,11 +20,9 @@ WORKDIR /app
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-# 프로젝트 소스 코드 복사 (전체 디렉토리 컨텍스트에서 복사 가능하게 설계)
+# 프로젝트 소스 코드 복사
 COPY scm-agent-system/ ./scm-agent-system/
-COPY utils/ ./utils/ 2>/dev/null || true
-COPY config/ ./config/ 2>/dev/null || true
-COPY agents/ ./agents/ 2>/dev/null || true
+
 
 WORKDIR /app/scm-agent-system
 

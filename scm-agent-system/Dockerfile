@@ -12,9 +12,7 @@ RUN pip install --no-cache-dir -r requirement.txt
 
 # 소스 코드 복사
 COPY scm-agent-system/ ./scm-agent-system/
-COPY config/ ./config/ 2>/dev/null || true
-COPY utils/ ./utils/ 2>/dev/null || true
-COPY agents/ ./agents/ 2>/dev/null || true
+
 
 WORKDIR /app/scm-agent-system
 
