@@ -14,6 +14,7 @@ pytest-cov     # 커버리지 80% 측정용
 # 시각화
 streamlit
 matplotlib
+plotly
 
 # 환경 변수
 python-dotenv

@@ -6,17 +6,21 @@ import requests
 import os
 import plotly.graph_objects as go
 import plotly.express as px
+from components.styles import inject_custom_css, BG, TX
 
 # FastAPI ML API 엔드포인트 URL 설정
 ML_API_URL = os.environ.get("ML_API_URL", "http://localhost:8000")
 
 def render_mlops_simulator_dashboard():
+    # Inject CSS
+    inject_custom_css()
+
     # ── 커스텀 메인 헤더 디자인 ──
     st.markdown("""
-    <div class="hdr" style="margin-bottom: 20px;">
+    <div class="hdr">
         <div>
-            <div class="hdr-t" style="font-size: 26px; color: #8ab4f8; font-weight: 700;">🤖 SCM 하이브리드 MLOps 운영 시뮬레이터</div>
-            <div class="hdr-s" style="font-size: 13px; color: #9aa0a6;">
+            <div class="hdr-t">🤖 SCM 하이브리드 MLOps 운영 시뮬레이터</div>
+            <div class="hdr-s">
                 TFT 분위수 예측 모델 서빙 최적화, SHAP 설명성, Human-in-the-Loop 의사결정 제어 및 데이터 드리프트 CT 트리거 통합 관제탑
             </div>
         </div>
@@ -24,12 +28,12 @@ def render_mlops_simulator_dashboard():
     """, unsafe_allow_html=True)
 
     # ── MLOps 시뮬레이터 제어판 (좌측 입력, 우측 실시간 시뮬레이션 지표) ──
-    st.markdown('<div class="sec" style="font-size: 16px; font-weight: 600; color: #e8eaed; border-bottom: 2px solid #3c4043; padding-bottom: 6px;">⚙️ 하이브리드 MLOps 실시간 인프라 시뮬레이션</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec">⚙️ 하이브리드 MLOps 실시간 인프라 시뮬레이션</div>', unsafe_allow_html=True)
     
     col_ctrl, col_stats = st.columns([1, 1.2])
 
     with col_ctrl:
-        st.markdown('<div style="background: #292a2d; padding: 15px; border-radius: 8px; border: 1px solid #3c4043;">', unsafe_allow_html=True)
+        st.markdown('<div class="cc">', unsafe_allow_html=True)
         st.subheader("🎛️ 인프라 및 가드라인 제어")
         
         # 슬라이더 1: 오차 임계치 가드라인
@@ -231,8 +235,8 @@ def render_mlops_simulator_dashboard():
             values = list(shap.values())
             
             # Plotly 수평 바 차트를 활용해 SHAP Waterfall 렌더링
-            # 긍정 기여(#81c995)와 부정 기여(#f28b82) 컬러 매핑
-            colors = ["#81c995" if v >= 0 else "#f28b82" for v in values]
+            # 긍정 기여(#00e5a0)와 부정 기여(#ff5c5c) 컬러 매핑
+            colors = ["#00e5a0" if v >= 0 else "#ff5c5c" for v in values]
             
             fig_shap = go.Figure()
             fig_shap.add_trace(go.Bar(
@@ -248,10 +252,19 @@ def render_mlops_simulator_dashboard():
             fig_shap.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#e8eaed'),
-                xaxis=dict(gridcolor='#3c4043', title="SHAP 기여도 값 (최종 수요에 미치는 편차 가산율)"),
-                yaxis=dict(gridcolor='#3c4043'),
-                margin=dict(l=40, r=40, t=10, b=40)
+                font=dict(color=TX, family="Inter, sans-serif"),
+                xaxis=dict(
+                    gridcolor='rgba(255, 255, 255, 0.06)',
+                    linecolor='rgba(255, 255, 255, 0.12)',
+                    tickfont=dict(color=TX, size=9),
+                    title=dict(text="SHAP 기여도 값 (최종 수요에 미치는 편차 가산율)", font=dict(color=TX, size=10))
+                ),
+                yaxis=dict(
+                    gridcolor='rgba(255, 255, 255, 0.06)',
+                    linecolor='rgba(255, 255, 255, 0.12)',
+                    tickfont=dict(color=TX, size=9)
+                ),
+                margin=dict(l=40, r=20, t=10, b=40)
             )
             st.plotly_chart(fig_shap, use_container_width=True)
             
@@ -267,7 +280,7 @@ def render_mlops_simulator_dashboard():
     st.write("")
 
     # ── Human-in-the-Loop (의사결정 제어권) 제어 센터 ──
-    st.markdown('<div class="sec" style="font-size: 16px; font-weight: 600; color: #e8eaed; border-bottom: 2px solid #3c4043; padding-bottom: 6px;">🟢 Human-in-the-Loop (HITL) 예외 발주 승인 및 거절 통제소</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec">🟢 Human-in-the-Loop (HITL) 예외 발주 승인 및 거절 통제소</div>', unsafe_allow_html=True)
     st.write("안전 재공 차이를 초과하거나 불확실성(분위수 10% ~ 90% 편차)이 임계치를 초과하여 수동 검토(`PENDING`) 상태로 격리된 발주 목록입니다. 현업 담당자는 데이터를 검토 후 승인 혹은 거절할 수 있습니다.")
     
     # 세션 상태에 HITL 가짜 데이터 스캐폴딩

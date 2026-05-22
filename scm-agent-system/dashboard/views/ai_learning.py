@@ -3,9 +3,10 @@ import streamlit as st
 import pandas as pd
 import auth_helper
 import plotly.graph_objects as go
-from components.styles import BG, TX, sax
+from components.styles import inject_custom_css, BG, TX, sax
 
 def render_ai_learning_dashboard():
+    inject_custom_css()
     st.markdown('<div class="hdr"><div><div class="hdr-t">🔄 매핑 품질 모니터링 및 피드백 추이</div><div class="hdr-s">사용자 피드백 기반 엑셀 매핑 규칙의 신뢰도 실시간 감쇠 및 정합성 제어 추이</div></div></div>', unsafe_allow_html=True)
 
     # 1. API 데이터 호출 (기본 companyId: SIGMA)
@@ -56,27 +57,46 @@ def render_ai_learning_dashboard():
             x=df['rawHeader'] + " ➔ " + df['mappedColumn'],
             y=df['confidence'],
             name='원본 알고리즘 신뢰도',
-            marker_color='#81c995',
-            opacity=0.6
+            marker_color='#00e5a0',
+            opacity=0.5
         ))
         
         fig.add_trace(go.Bar(
             x=df['rawHeader'] + " ➔ " + df['mappedColumn'],
             y=df['effectiveConfidence'],
             name='피드백 반영 실효 신뢰도',
-            marker_color='#f28b82',
-            opacity=0.9
+            marker_color='#ff5c5c',
+            opacity=0.85
         ))
         
         fig.update_layout(
             barmode='group',
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#e8eaed'),
-            xaxis=dict(gridcolor='#3c4043', title="매핑 매칭 쌍"),
-            yaxis=dict(gridcolor='#3c4043', title="신뢰도 점수 (0.0 ~ 1.0)", range=[0, 1.05]),
-            margin=dict(l=40, r=40, t=20, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            font=dict(color=TX, family="Inter, sans-serif"),
+            xaxis=dict(
+                gridcolor='rgba(255, 255, 255, 0.06)',
+                linecolor='rgba(255, 255, 255, 0.12)',
+                tickfont=dict(color=TX, size=9),
+                title=dict(text="매핑 매칭 쌍", font=dict(color=TX, size=10))
+            ),
+            yaxis=dict(
+                gridcolor='rgba(255, 255, 255, 0.06)',
+                linecolor='rgba(255, 255, 255, 0.12)',
+                tickfont=dict(color=TX, size=9),
+                title=dict(text="신뢰도 점수 (0.0 ~ 1.0)", font=dict(color=TX, size=10)),
+                range=[0, 1.05]
+            ),
+            margin=dict(l=40, r=20, t=10, b=40),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(color=TX, size=9),
+                bgcolor="rgba(0, 0, 0, 0)"
+            )
         )
         st.plotly_chart(fig, use_container_width=True)
         
@@ -138,8 +158,8 @@ def render_ai_learning_dashboard():
         y=sim_eff_conf,
         mode='lines+markers',
         name='실효 신뢰도 적응 곡선 (C_eff)',
-        line=dict(color='#81c995', width=3),
-        marker=dict(size=8)
+        line=dict(color='#00e5a0', width=3),
+        marker=dict(color='#7effc8', size=8)
     ))
     
     time_fig.add_trace(go.Scatter(
@@ -147,18 +167,36 @@ def render_ai_learning_dashboard():
         y=sim_neg_scores,
         mode='lines+markers',
         name='누적 패널티 (Negative Score)',
-        line=dict(color='#f28b82', width=2, dash='dash'),
-        marker=dict(size=6)
+        line=dict(color='#ff5c5c', width=2, dash='dash'),
+        marker=dict(color='#ff5c5c', size=6)
     ))
     
     time_fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e8eaed'),
-        xaxis=dict(gridcolor='#3c4043', title="시간 추이"),
-        yaxis=dict(gridcolor='#3c4043', title="가중치 및 신뢰도 점수"),
-        margin=dict(l=40, r=40, t=10, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        font=dict(color=TX, family="Inter, sans-serif"),
+        xaxis=dict(
+            gridcolor='rgba(255, 255, 255, 0.06)',
+            linecolor='rgba(255, 255, 255, 0.12)',
+            tickfont=dict(color=TX, size=9),
+            title=dict(text="시간 추이", font=dict(color=TX, size=10))
+        ),
+        yaxis=dict(
+            gridcolor='rgba(255, 255, 255, 0.06)',
+            linecolor='rgba(255, 255, 255, 0.12)',
+            tickfont=dict(color=TX, size=9),
+            title=dict(text="가중치 및 신뢰도 점수", font=dict(color=TX, size=10))
+        ),
+        margin=dict(l=40, r=20, t=10, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(color=TX, size=9),
+            bgcolor="rgba(0, 0, 0, 0)"
+        )
     )
     st.plotly_chart(time_fig, use_container_width=True)
 

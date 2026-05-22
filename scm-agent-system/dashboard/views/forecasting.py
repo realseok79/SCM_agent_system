@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from matplotlib import rc
 import auth_helper
+from components.styles import inject_custom_css, BG, TX, sax
 
 # Matplotlib 한글 폰트 설정
 plt.rcParams["axes.unicode_minus"] = False
@@ -15,54 +16,10 @@ for f in ["AppleGothic", "NanumGothic", "Malgun Gothic"]:
     except:
         continue
 
-BG = '#202124'
-TX = '#e8eaed'
-
-def sax(ax):
-    ax.tick_params(colors=TX, labelsize=7)
-    for spine in ax.spines.values():
-        spine.set_color('#3c4043')
-    ax.yaxis.grid(True, color="#3c4043", alpha=0.5, ls=":")
-    ax.xaxis.grid(False)
-
 def show():
     # CSS 스타일 주입
-    st.markdown("""
-    <style>
-    .stApp{background:#202124;color:#e8eaed}
-    .block-container, 
-    [data-testid="stMainBlockContainer"], 
-    [data-testid="stAppViewBlockContainer"] {
-        padding: 0 1.5rem 0 1.5rem !important;
-        max-width: 98% !important;
-        width: 98% !important;
-    }
-    .hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:16px 16px 10px 16px;margin:0 -1.5rem 0.6rem !important;}
-    .hdr-t{font-size:16px;font-weight:600;color:#e8eaed}
-    .hdr-s{font-size:11px;color:#9aa0a6;margin-top:2px}
-    .sec{font-size:11px;font-weight:600;color:#9aa0a6;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #3c4043;padding-bottom:4px;margin:0.8rem 0 0.4rem}
-    .kg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:0.3rem}
-    .kc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 12px}
-    .kc:hover{border-color:#8ab4f8}
-    .kl{font-size:9px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
-    .kv{font-size:22px;font-weight:400;color:#e8eaed;line-height:1.1}
-    .kv.b{color:#8ab4f8}.kv.g{color:#81c995}.kv.y{color:#fdd663}.kv.r{color:#f28b82}
-    .ku{font-size:9px;color:#5f6368;margin-top:2px}
-    .kb{display:inline-block;font-size:8px;border-radius:3px;padding:1px 5px;margin-top:3px;border:1px solid}
-    .kb.ok{background:#81c99511;color:#81c995;border-color:#81c99533}
-    .kb.w{background:#f28b8211;color:#f28b82;border-color:#f28b8233}
-    .cc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 10px 4px;margin-bottom:4px}
-    .ct{font-size:11px;font-weight:500;color:#e8eaed;margin-bottom:4px;display:flex;align-items:center;gap:6px}
-    .dt{width:6px;height:6px;border-radius:50%;display:inline-block}
-    .gt{background:#292a2d;border:1px solid #3c4043;border-radius:6px;overflow:hidden;margin-bottom:4px;width:100%}
-    .gt table{width:100%;border-collapse:collapse;font-size:11px}
-    .gt th{background:#303134;color:#9aa0a6;font-weight:500;font-size:9px;text-transform:uppercase;letter-spacing:.04em;padding:5px 8px;text-align:left;border-bottom:1px solid #3c4043}
-    .gt td{padding:4px 8px;border-bottom:1px solid #3c4043;color:#e8eaed}
-    .ep{border-radius:6px;padding:8px 12px;margin-bottom:4px;border-left:3px solid}
-    .ec{background:#f28b8209;border-color:#f28b82}.ew{background:#fdd66309;border-color:#fdd663}.en{background:#81c99509;border-color:#81c995}
-    .et{font-size:11px;font-weight:500;margin-bottom:3px}.eb{font-size:10px;color:#9aa0a6;line-height:1.5}
-    </style>
-    """, unsafe_allow_html=True)
+    inject_custom_css()
+
 
     st.markdown(f'<div class="hdr"><div><div class="hdr-t">📈 수요 예측 및 출고 분석 관제탑</div><div class="hdr-s">과거 이력과 확률 모델을 기반으로 최적 안전재고 및 미래 수요 예측 분석을 수행합니다.</div></div></div>', unsafe_allow_html=True)
     
@@ -152,7 +109,7 @@ def show():
             ax.set_facecolor(BG)
             
             ax.bar(df_stats["date"], df_stats["outbound"], color="#8ab4f8", alpha=0.3, label="일일 출고량")
-            ax.plot(df_stats["date"], df_stats["moving_avg"], color="#81c995", lw=1.8, label="7일 이동평균선")
+            ax.plot(df_stats["date"], df_stats["moving_avg"], color="#00e5a0", lw=1.8, label="7일 이동평균선")
             
             sax(ax)
             ax.set_xlabel("일자 (Date)", fontsize=8, color=TX)
@@ -179,7 +136,7 @@ def show():
             fig.patch.set_facecolor(BG)
             ax1.set_facecolor(BG)
             
-            colors = ["#81c995" if idx == 0 else ("#fdd663" if idx == 1 else "#f28b82") for idx in range(len(df_abc))]
+            colors = ["#00e5a0" if idx == 0 else ("#fdd663" if idx == 1 else "#ff5c5c") for idx in range(len(df_abc))]
             bars = ax1.bar(df_abc["product_name"], df_abc["total_qty"], color=colors, alpha=0.6, width=0.4, label="출고량")
             ax1.set_ylabel("누적 출고량 (Units)", color=TX, fontsize=8)
             ax1.tick_params(colors=TX, labelsize=7)
@@ -190,7 +147,7 @@ def show():
             ax2.tick_params(colors=TX, labelsize=7)
             ax2.set_ylim(0, 110)
             
-            ax2.axhline(80.0, color="#f28b82", linestyle="--", lw=1.0, alpha=0.7)
+            ax2.axhline(80.0, color="#ff5c5c", linestyle="--", lw=1.0, alpha=0.7)
             
             for ax in [ax1, ax2]:
                 ax.spines["top"].set_visible(False)
@@ -204,7 +161,7 @@ def show():
         st.markdown('</div>', unsafe_allow_html=True)
             
     with col4:
-        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>지능형 적정 안전재고 및 ROP 추천 마스터 테이블</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#00e5a0"></span>지능형 적정 안전재고 및 ROP 추천 마스터 테이블</div>', unsafe_allow_html=True)
         
         from agents.analysis_agent import AnalysisAgent
         from dto.schemas import DataDTO
@@ -281,7 +238,7 @@ def show():
                 <tbody>
         """
         for r in table_records:
-            cls_color = "#81c995" if "A" in r["등급 (ABC)"] else ("#fdd663" if "B" in r["등급 (ABC)"] else "#f28b82")
+            cls_color = "#00e5a0" if "A" in r["등급 (ABC)"] else ("#fdd663" if "B" in r["등급 (ABC)"] else "#ff5c5c")
             html_table += f"""
                     <tr>
                         <td style="font-weight:bold; color:#8ab4f8;">{r['품목명']}</td>
@@ -289,7 +246,7 @@ def show():
                         <td>{r['현재 재고']}</td>
                         <td>{r['7일 예측수요']}</td>
                         <td>{r['14일 예측수요']}</td>
-                        <td style="color:#81c995;">{r['안전 재고']}</td>
+                        <td style="color:#00e5a0;">{r['안전 재고']}</td>
                         <td style="color:#fdd663; font-weight:bold;">{r['발주점 (ROP)']}</td>
                         <td style="color:#8ab4f8; font-weight:bold;">{r['최적 발주량']}</td>
                     </tr>

@@ -3,6 +3,8 @@ import streamlit as st
 import pandas as pd
 import auth_helper
 
+from components.styles import inject_custom_css
+
 def render_iot_management():
     # 1. 권한 검증 (ROLE_ADMIN 만 접근 허용)
     user_role = st.session_state.get("user_role", "ROLE_USER")
@@ -10,6 +12,7 @@ def render_iot_management():
         st.error("🚨 권한 오류: 이 페이지는 관리자(ROLE_ADMIN)만 접근할 수 있습니다.")
         return
 
+    inject_custom_css()
     st.markdown(f'<div class="hdr"><div><div class="hdr-t">📟 IoT 센서 모니터링 (REST 연동)</div><div class="hdr-s">물류 창고 실시간 IoT 센서 디바이스 등록 및 활성 상태 중앙 관리 통제탑</div></div></div>', unsafe_allow_html=True)
 
     # 2. 지역 정보 가져오기 (디바이스 등록 시 매핑할 지역 목록)

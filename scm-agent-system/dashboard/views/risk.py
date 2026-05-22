@@ -2,7 +2,10 @@
 import streamlit as st
 import auth_helper
 
+from components.styles import inject_custom_css
+
 def render_risk_dashboard():
+    inject_custom_css()
     st.markdown(f'<div class="hdr"><div><div class="hdr-t">등록 지점 리스크 관제 (Spring AI + 서킷 브레이커)</div><div class="hdr-s">기상 정보와 리스크 스코어를 종합해 실시간 운송 지연 여부를 판정합니다.</div></div></div>', unsafe_allow_html=True)
 
     regions = auth_helper.api_get("/api/regions")
@@ -15,8 +18,8 @@ def render_risk_dashboard():
         risk = auth_helper.api_get(f"/api/dashboard/region/{code}/risk-score")
         if risk:
             level = risk.get("riskLevel", "LOW")
-            color = "#f28b82" if level == "HIGH" else "#81c995"
-            bg_color = "#f28b820f" if level == "HIGH" else "#81c9950f"
+            color = "#ff5c5c" if level == "HIGH" else "#00e5a0"
+            bg_color = "rgba(255, 92, 92, 0.06)" if level == "HIGH" else "rgba(0, 229, 160, 0.06)"
             
             insight = auth_helper.api_get(f"/api/dashboard/region/{code}/insight")
             badge_html = ""

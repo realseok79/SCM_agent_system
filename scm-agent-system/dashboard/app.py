@@ -9,6 +9,7 @@ from views.ai_learning import render_ai_learning_dashboard
 from views.iot_management import render_iot_management
 from views.audit_log import render_audit_log_dashboard
 from views.mlops_simulator import render_mlops_simulator_dashboard
+from views.agent_workflow import render_agent_workflow
 import auth_helper
 
 st.set_page_config(page_title="SCM Agent Control Tower", page_icon="SCM", layout="wide", initial_sidebar_state="expanded")
@@ -66,8 +67,8 @@ def main():
         
         # 권한별 메뉴 분기
         MENU_BY_ROLE = {
-            "ROLE_ADMIN": ["메인 대시보드", "지역별 SCM 관제 센터", "등록 지점 리스크 관제", "📟 IoT 센서 모니터링", "🔄 매핑 피드백 현황", "🤖 MLOps 관제 및 시뮬레이터", "📋 감사 로그"],
-            "ROLE_LOGISTICS": ["메인 대시보드", "지역별 SCM 관제 센터", "등록 지점 리스크 관제", "🤖 MLOps 관제 및 시뮬레이터"],
+            "ROLE_ADMIN": ["메인 대시보드", "지역별 SCM 관제 센터", "등록 지점 리스크 관제", "📟 IoT 센서 모니터링", "🤖 자율 발주 워크플로우", "🔄 매핑 피드백 현황", "🤖 MLOps 관제 및 시뮬레이터", "📋 감사 로그"],
+            "ROLE_LOGISTICS": ["메인 대시보드", "지역별 SCM 관제 센터", "등록 지점 리스크 관제", "🤖 자율 발주 워크플로우", "🤖 MLOps 관제 및 시뮬레이터"],
             "ROLE_EXECUTIVE": ["메인 대시보드 (경영진)", "🔄 매핑 피드백 현황", "🤖 MLOps 관제 및 시뮬레이터", "📋 감사 로그"]
         }
         
@@ -87,6 +88,8 @@ def main():
             render_risk_dashboard()
         elif menu == "📟 IoT 센서 모니터링":
             render_iot_management()
+        elif menu == "🤖 자율 발주 워크플로우":
+            render_agent_workflow()
         elif menu == "🔄 매핑 피드백 현황":
             render_ai_learning_dashboard()
         elif menu == "🤖 MLOps 관제 및 시뮬레이터":

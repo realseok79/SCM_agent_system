@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib import rc
 import auth_helper
 from agents.baseline_agent import BaselineAgent
+from components.styles import inject_custom_css, BG, TX, sax
 
 # Matplotlib 한글 폰트 설정
 plt.rcParams["axes.unicode_minus"] = False
@@ -16,15 +17,6 @@ for f in ["AppleGothic", "NanumGothic", "Malgun Gothic"]:
     except:
         continue
 
-BG = '#202124'
-TX = '#e8eaed'
-
-def sax(ax):
-    ax.tick_params(colors=TX, labelsize=7)
-    for spine in ax.spines.values():
-        spine.set_color('#3c4043')
-    ax.yaxis.grid(True, color="#3c4043", alpha=0.5, ls=":")
-    ax.xaxis.grid(False)
 
 @st.cache_data
 def get_cached_simulation(sku, unit_price, holding_cost, base_demand, lead_time, initial_stock, days, alpha_factor):
@@ -42,32 +34,7 @@ def get_cached_simulation(sku, unit_price, holding_cost, base_demand, lead_time,
 
 def show():
     # CSS 스타일 주입 (수려한 어두운 모드 UX)
-    st.markdown("""
-    <style>
-    .stApp{background:#202124;color:#e8eaed}
-    .block-container, 
-    [data-testid="stMainBlockContainer"], 
-    [data-testid="stAppViewBlockContainer"] {
-        padding: 0 1.5rem 0 1.5rem !important;
-        max-width: 98% !important;
-        width: 98% !important;
-    }
-    .hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:16px 16px 10px 16px;margin:0 -1.5rem 0.6rem !important;}
-    .hdr-t{font-size:16px;font-weight:600;color:#e8eaed}
-    .hdr-s{font-size:11px;color:#9aa0a6;margin-top:2px}
-    .sec{font-size:11px;font-weight:600;color:#9aa0a6;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #3c4043;padding-bottom:4px;margin:0.8rem 0 0.4rem}
-    .kg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:0.3rem}
-    .kc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 12px}
-    .kc:hover{border-color:#8ab4f8}
-    .kl{font-size:9px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
-    .kv{font-size:22px;font-weight:400;color:#e8eaed;line-height:1.1}
-    .kv.b{color:#8ab4f8}.kv.g{color:#81c995}.kv.y{color:#fdd663}.kv.r{color:#f28b82}
-    .ku{font-size:9px;color:#5f6368;margin-top:2px}
-    .cc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 10px 4px;margin-bottom:4px}
-    .ct{font-size:11px;font-weight:500;color:#e8eaed;margin-bottom:4px;display:flex;align-items:center;gap:6px}
-    .dt{width:6px;height:6px;border-radius:50%;display:inline-block}
-    </style>
-    """, unsafe_allow_html=True)
+    inject_custom_css()
 
     st.markdown('<div class="hdr"><div><div class="hdr-t">100일 SCM 자본 효율성 시뮬레이션 비교 (대조군 vs 실험군)</div><div class="hdr-s">30일 이동평균 대조군 &nbsp;·&nbsp; 포아송 확률론적 AI 가드레일 실험군의 비용구조 정량 비교</div></div></div>', unsafe_allow_html=True)
 
@@ -155,7 +122,7 @@ def show():
         x = np.arange(len(labels))
         width = 0.35
 
-        ax.bar(x - width/2, c_costs, width, label='대조군 (정적 이동평균)', color='#f28b82', alpha=0.85)
+        ax.bar(x - width/2, c_costs, width, label='대조군 (정적 이동평균)', color='#ff5c5c', alpha=0.85)
         ax.bar(x + width/2, t_costs, width, label='실험군 (확률론적 AI)', color='#8ab4f8', alpha=0.85)
 
         ax.set_ylabel('누적 비용 (원)', fontsize=8, color=TX)
@@ -178,15 +145,15 @@ def show():
         ax2.set_facecolor(BG)
 
         # 재고 곡선
-        ax1.plot(df_c["day"], df_c["stock"], label="대조군 재고", color="#f28b82", lw=1.2, ls="--")
+        ax1.plot(df_c["day"], df_c["stock"], label="대조군 재고", color="#ff5c5c", lw=1.2, ls="--")
         ax1.plot(df_t["day"], df_t["stock"], label="실험군 재고 (AI)", color="#8ab4f8", lw=1.5)
         ax1.set_ylabel("재고 수준 (Units)", fontsize=8, color=TX)
         ax1.legend(facecolor=BG, edgecolor='#3c4043', labelcolor=TX, fontsize=7, loc="upper right")
         sax(ax1)
 
         # 품절 기회 손실 막대
-        ax2.bar(df_c["day"] - 0.2, df_c["shortage"], width=0.4, label="대조군 품절", color="#f28b82", alpha=0.5)
-        ax2.bar(df_t["day"] + 0.2, df_t["shortage"], width=0.4, label="실험군 품절", color="#81c995", alpha=0.8)
+        ax2.bar(df_c["day"] - 0.2, df_c["shortage"], width=0.4, label="대조군 품절", color="#ff5c5c", alpha=0.5)
+        ax2.bar(df_t["day"] + 0.2, df_t["shortage"], width=0.4, label="실험군 품절", color="#00e5a0", alpha=0.8)
         ax2.set_ylabel("일일 품절량 (Units)", fontsize=8, color=TX)
         ax2.set_xlabel("시뮬레이션 일자 (Days)", fontsize=8, color=TX)
         ax2.legend(facecolor=BG, edgecolor='#3c4043', labelcolor=TX, fontsize=7, loc="upper right")

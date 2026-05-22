@@ -4,16 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import requests
 import auth_helper
-from components.styles import BG, TX, sax
+from components.styles import inject_custom_css, BG, TX, sax
 
 def render_regional_dashboard():
+    inject_custom_css()
     st.markdown(f'<div class="hdr"><div><div class="hdr-t">지역별 SCM 관제 센터 (REST 연동)</div><div class="hdr-s">지역별 재고 CRUD 및 기상 융합 인공지능 분석 관제탑</div></div></div>', unsafe_allow_html=True)
 
     # 지역 조회
-    regions = auth_helper.api_get("/api/regions")
-    if regions is None:
-        st.warning("⚠️ 지역 정보를 읽어오지 못했습니다.")
-        return
+    regions_res = auth_helper.api_get("/api/regions")
+    if regions_res is None:
+        st.warning("⚠️ 지역 정보를 읽어오지 못했습니다. (네트워크 상태 확인 필요)")
+        regions = []
+    else:
+        regions = regions_res
 
     col1, col2 = st.columns([1, 2.2])
 
@@ -71,39 +74,39 @@ def render_regional_dashboard():
                             else:
                                 st.error("지역 삭제 실패")
 
-        if not regions:
-            st.warning("⚠️ 등록된 지역이 없습니다. 먼저 지역을 등록해 주세요.")
-            return
-        
-        # 기본 선택값 결정 (신규 등록/파싱 지역 우선 자동 선택)
-        region_options_keys = list(region_options.keys())
-        
-        if "auto_selected_region" in st.session_state:
-            target_code = st.session_state["auto_selected_region"]
-            for k in region_options_keys:
-                if region_options[k]["regionCode"] == target_code:
-                    st.session_state["selected_region_name"] = k
-                    break
-            # 한 번 사용한 세션 값은 삭제
-            del st.session_state["auto_selected_region"]
+        selected_region = None
+        if regions:
+            # 기본 선택값 결정 (신규 등록/파싱 지역 우선 자동 선택)
+            region_options_keys = list(region_options.keys())
             
-        if "selected_region_name" not in st.session_state or st.session_state["selected_region_name"] not in region_options:
-            st.session_state["selected_region_name"] = region_options_keys[0]
+            if "auto_selected_region" in st.session_state:
+                target_code = st.session_state["auto_selected_region"]
+                for k in region_options_keys:
+                    if region_options[k]["regionCode"] == target_code:
+                        st.session_state["selected_region_name"] = k
+                        break
+                # 한 번 사용한 세션 값은 삭제
+                del st.session_state["auto_selected_region"]
+                
+            if "selected_region_name" not in st.session_state or st.session_state["selected_region_name"] not in region_options:
+                st.session_state["selected_region_name"] = region_options_keys[0]
 
-        selected_key = st.selectbox(
-            "관제할 지역 선택", 
-            options=region_options_keys, 
-            key="selected_region_name"
-        )
-        selected_region = region_options[selected_key]
+            selected_key = st.selectbox(
+                "관제할 지역 선택", 
+                options=region_options_keys, 
+                key="selected_region_name"
+            )
+            selected_region = region_options[selected_key]
 
-        st.markdown(f"""
-        <div class="kc" style="margin-bottom: 10px;">
-            <div class="kl">선택된 지역 코드</div>
-            <div class="kv b">{selected_region['regionCode']}</div>
-            <div class="ku">{selected_region['description'] or '설명 없음'}</div>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="kc" style="margin-bottom: 10px;">
+                <div class="kl">선택된 지역 코드</div>
+                <div class="kv b">{selected_region['regionCode']}</div>
+                <div class="ku">{selected_region['description'] or '설명 없음'}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("💡 등록된 지역이 없습니다. 아래에서 SCM 엑셀/CSV 파일을 업로드하면 자동으로 지역이 등록됩니다.")
 
         # 데이터 업로드
         st.markdown('<div class="sec">SCM 엑셀/CSV 데이터 업로드</div>', unsafe_allow_html=True)
@@ -191,69 +194,77 @@ def render_regional_dashboard():
                 preview_df = pd.DataFrame(res_json.get("previewRows", []), columns=res_json.get("columns", []))
                 st.dataframe(preview_df, use_container_width=True)
 
+                # validation for region_code
+                has_region_code = any(edited_df["표준 SCM 컬럼 매핑"] == "region_code")
+                if not has_region_code:
+                    st.warning("⚠️ 신규 지역 자동 등록을 위해 지역을 구분할 수 있는 컬럼(region_code)을 반드시 매핑해주세요.")
+
                 # 승인/반영 단추
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("🚀 AI 매핑 승인 및 최종 반영", use_container_width=True, type="primary"):
-                        confirmed_mapping = {}
-                        for _, r in edited_df.iterrows():
-                            raw = r["원본 컬럼"]
-                            std = r["표준 SCM 컬럼 매핑"]
-                            confirmed_mapping[raw] = None if std == "미매핑" else std
-                        
-                        with st.spinner("⚡ AI 데이터 클렌징 및 최종 재고 반영 중..."):
-                            import json
-                            try:
-                                # 1단계: FastAPI를 통한 비정형 데이터 정제 및 병합 (Clean)
-                                clean_files = {"file": (st.session_state["analyze_file_name"], st.session_state["analyze_file_bytes"], st.session_state["analyze_file_type"])}
-                                clean_data = {"user_mapping": json.dumps(confirmed_mapping)}
-                                clean_res = requests.post("http://localhost:8090/clean/excel", files=clean_files, data=clean_data, timeout=25)
-                                
-                                if clean_res.status_code != 200:
-                                    st.error(f"❌ AI 데이터 클렌징 실패: {clean_res.text}")
-                                else:
-                                    cleaned_csv_str = clean_res.json().get("cleaned_csv", "")
+                        if not has_region_code:
+                            st.error("❌ 지역 코드(region_code) 매핑이 누락되었습니다. 반영을 중단합니다.")
+                        else:
+                            confirmed_mapping = {}
+                            for _, r in edited_df.iterrows():
+                                raw = r["원본 컬럼"]
+                                std = r["표준 SCM 컬럼 매핑"]
+                                confirmed_mapping[raw] = None if std == "미매핑" else std
+                            
+                            with st.spinner("⚡ AI 데이터 클렌징 및 최종 재고 반영 중..."):
+                                import json
+                                try:
+                                    # 1단계: FastAPI를 통한 비정형 데이터 정제 및 병합 (Clean)
+                                    clean_files = {"file": (st.session_state["analyze_file_name"], st.session_state["analyze_file_bytes"], st.session_state["analyze_file_type"])}
+                                    clean_data = {"user_mapping": json.dumps(confirmed_mapping)}
+                                    clean_res = requests.post("http://localhost:8090/clean/excel", files=clean_files, data=clean_data, timeout=25)
                                     
-                                    # 2단계: 정제 완료된 완전 표준 규격 CSV를 Java 백엔드에 다이렉트 전송
-                                    files = {"file": ("cleaned_data.csv", cleaned_csv_str.encode("utf-8"), "text/csv")}
-                                    data = {
-                                        "company_id": "SIGMA",
-                                        "user_mapping": json.dumps({
-                                            "region_code": "region_code",
-                                            "product_name": "product_name",
-                                            "date": "date",
-                                            "quantity": "quantity"
-                                        })
-                                    }
-                                    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
-                                    
-                                    confirm_res = requests.post(
-                                        f"{auth_helper.API_BASE_URL}/api/regions/upload/confirm",
-                                        data=data,
-                                        files=files,
-                                        headers=headers,
-                                        timeout=15
-                                    )
-                                    if confirm_res.status_code == 200:
-                                        st.session_state["upload_success"] = True
-                                        res_json_confirm = confirm_res.json()
-                                        new_regs = res_json_confirm.get("newlyRegisteredRegions", [])
-                                        proc_regs = res_json_confirm.get("processedRegions", [])
-                                        if new_regs:
-                                            st.session_state["auto_selected_region"] = new_regs[0]
-                                        elif proc_regs:
-                                            st.session_state["auto_selected_region"] = proc_regs[0]
-                                        
-                                        # 세션 정리
-                                        st.session_state.pop("analyze_result", None)
-                                        st.session_state.pop("analyze_file_bytes", None)
-                                        st.session_state.pop("analyze_file_name", None)
-                                        st.session_state.pop("analyze_file_type", None)
-                                        st.rerun()
+                                    if clean_res.status_code != 200:
+                                        st.error(f"❌ AI 데이터 클렌징 실패: {clean_res.text}")
                                     else:
-                                        st.error(f"❌ 최종 반영 실패: {confirm_res.text}")
-                            except Exception as e:
-                                st.error(f"❌ 반영 서버 통신 실패: {e}")
+                                        cleaned_csv_str = clean_res.json().get("cleaned_csv", "")
+                                        
+                                        # 2단계: 정제 완료된 완전 표준 규격 CSV를 Java 백엔드에 다이렉트 전송
+                                        files = {"file": ("cleaned_data.csv", cleaned_csv_str.encode("utf-8"), "text/csv")}
+                                        data = {
+                                            "company_id": "SIGMA",
+                                            "user_mapping": json.dumps({
+                                                "region_code": "region_code",
+                                                "product_name": "product_name",
+                                                "date": "date",
+                                                "quantity": "quantity"
+                                            })
+                                        }
+                                        headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+                                        
+                                        confirm_res = requests.post(
+                                            f"{auth_helper.API_BASE_URL}/api/regions/upload/confirm",
+                                            data=data,
+                                            files=files,
+                                            headers=headers,
+                                            timeout=15
+                                        )
+                                        if confirm_res.status_code == 200:
+                                            st.session_state["upload_success"] = True
+                                            res_json_confirm = confirm_res.json()
+                                            new_regs = res_json_confirm.get("newlyRegisteredRegions", [])
+                                            proc_regs = res_json_confirm.get("processedRegions", [])
+                                            if new_regs:
+                                                st.session_state["auto_selected_region"] = new_regs[0]
+                                            elif proc_regs:
+                                                st.session_state["auto_selected_region"] = proc_regs[0]
+                                            
+                                            # 세션 정리
+                                            st.session_state.pop("analyze_result", None)
+                                            st.session_state.pop("analyze_file_bytes", None)
+                                            st.session_state.pop("analyze_file_name", None)
+                                            st.session_state.pop("analyze_file_type", None)
+                                            st.rerun()
+                                        else:
+                                            st.error(f"❌ 최종 반영 실패: {confirm_res.text}")
+                                except Exception as e:
+                                    st.error(f"❌ 반영 서버 통신 실패: {e}")
                 
                 with col_btn2:
                     if st.button("❌ 매핑 작업 취소", use_container_width=True):
@@ -270,85 +281,86 @@ def render_regional_dashboard():
     with col2:
         st.markdown('<div class="sec">실시간 지역 재고 흐름 & 기상 융합 분석</div>', unsafe_allow_html=True)
 
-        # 1. 해당 지역 재고 데이터 조회
-        inv_data = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/inventory")
-        if not inv_data:
-            st.info("💡 분석을 진행하기 위해 좌측 패널에서 재고 데이터를 업로드해 주세요.")
-            return
-
-        inv_df = pd.DataFrame([
-            {
-                "product_name": inv["id"]["productName"],
-                "date": inv["id"]["date"],
-                "quantity": inv["quantity"]
-            } for inv in inv_data
-        ])
-
-        # 2. 기상 데이터 조회
-        weather_data = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/weather")
-        weather_df = pd.DataFrame(weather_data) if weather_data else pd.DataFrame()
-
-        # 재고 KPI 카드 렌더링
-        # 물량이 없는(최신 재고량이 0 이하인) 품목 제외
-        inv_df["quantity"] = pd.to_numeric(inv_df["quantity"], errors="coerce").fillna(0)
-        
-        active_products = []
-        for p in inv_df["product_name"].unique():
-            p_df = inv_df[inv_df["product_name"] == p].sort_values("date")
-            if not p_df.empty and p_df["quantity"].iloc[-1] > 0:
-                active_products.append(p)
-                
-        products = active_products
-        
-        if not products:
-            st.info("💡 분석할 만한 유효 재고(최신 물량 > 0)를 가진 품목이 없습니다.")
-            return
-            
-        total_qty = inv_df[inv_df["product_name"].isin(products)].groupby("product_name")["quantity"].last().sum()
-
-        st.markdown(f'''<div class="kg">
-        <div class="kc"><div class="kl">모니터링 품목수</div><div class="kv">{len(products)} SKU</div><div class="ku">지정 품목 리스트</div></div>
-        <div class="kc"><div class="kl">최신 총 재고량</div><div class="kv b">{total_qty:,.0f}</div><div class="ku">units (마지막 일자 기준)</div></div>
-        <div class="kc"><div class="kl">기상 관측일수</div><div class="kv g">{len(weather_df)}일</div><div class="ku">동기화 완료</div></div>
-        </div>''', unsafe_allow_html=True)
-
-        # 품목 선택 필터
-        selected_prod = st.selectbox("분석할 품목 선택", options=products)
-        prod_inv = inv_df[inv_df["product_name"] == selected_prod]
-
-        # 1. 재고 변동 차트 시각화 및 2. 데이터 무결성 검증
-        if prod_inv.empty or prod_inv["quantity"].iloc[-1] <= 0:
-            st.info(f"💡 [{selected_prod}] 품목은 현재 재고가 없어 차트 및 무결성 분석을 제공하지 않습니다.")
+        if not selected_region:
+            st.info("💡 데이터를 업로드하면 지역이 자동 등록되고 상세 대시보드가 활성화됩니다.")
         else:
-            st.markdown(f'<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>[{selected_prod}] 일별 재고 변동 추이</div>', unsafe_allow_html=True)
-            
-            fig, ax = plt.subplots(figsize=(10, 2.5), dpi=100)
-            fig.patch.set_facecolor(BG)
-            ax.set_facecolor(BG)
-            
-            dates_parsed = pd.to_datetime(prod_inv["date"])
-            prod_inv = prod_inv.assign(parsed_date=dates_parsed)
-            prod_inv = prod_inv.sort_values("parsed_date")
-            
-            ax.plot(prod_inv["parsed_date"], prod_inv["quantity"], color="#8ab4f8", lw=1.6, marker="o", label="재고량")
-            ax.fill_between(prod_inv["parsed_date"], prod_inv["quantity"], alpha=0.08, color="#8ab4f8")
-            
-            sax(ax)
-            ax.set_xlabel("날짜 (Date)", fontsize=8, color=TX)
-            ax.set_ylabel("수량 (Units)", fontsize=8, color=TX)
-            fig.tight_layout(pad=0.5)
-            st.pyplot(fig, use_container_width=True)
-            plt.close(fig)
-            st.markdown('</div>', unsafe_allow_html=True)
+            # 1. 해당 지역 재고 데이터 조회
+            inv_data = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/inventory")
+            if not inv_data:
+                st.info("💡 분석을 진행하기 위해 좌측 패널에서 재고 데이터를 업로드해 주세요.")
+            else:
+                inv_df = pd.DataFrame([
+                    {
+                        "product_name": inv["id"]["productName"],
+                        "date": inv["id"]["date"],
+                        "quantity": inv["quantity"]
+                    } for inv in inv_data
+                ])
 
-            # 2. 데이터 무결성 검증
-            st.markdown('<div class="sec">재고 효율성 및 데이터 무결성 관제탑</div>', unsafe_allow_html=True)
-            latest_date = prod_inv["date"].iloc[-1]
-            
-            # 무결성 검증 API 호출
-            integrity_result = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/integrity?product={selected_prod}&date={latest_date}")
-            if integrity_result:
-                if integrity_result.get("isConsistent", True):
-                    st.success(f"✅ 데이터 무결성 검증 완료 | {integrity_result.get('message')}")
+                # 2. 기상 데이터 조회
+                weather_data = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/weather")
+                weather_df = pd.DataFrame(weather_data) if weather_data else pd.DataFrame()
+
+                # 재고 KPI 카드 렌더링
+                # 물량이 없는(최신 재고량이 0 이하인) 품목 제외
+                inv_df["quantity"] = pd.to_numeric(inv_df["quantity"], errors="coerce").fillna(0)
+                
+                active_products = []
+                for p in inv_df["product_name"].unique():
+                    p_df = inv_df[inv_df["product_name"] == p].sort_values("date")
+                    if not p_df.empty and p_df["quantity"].iloc[-1] > 0:
+                        active_products.append(p)
+                        
+                products = active_products
+                
+                if not products:
+                    st.info("💡 분석할 만한 유효 재고(최신 물량 > 0)를 가진 품목이 없습니다.")
                 else:
-                    st.error(f"⚠️ 무결성 불일치 발생 | {integrity_result.get('message')}")
+                    total_qty = inv_df[inv_df["product_name"].isin(products)].groupby("product_name")["quantity"].last().sum()
+
+                    st.markdown(f'''<div class="kg">
+                    <div class="kc"><div class="kl">모니터링 품목수</div><div class="kv">{len(products)} SKU</div><div class="ku">지정 품목 리스트</div></div>
+                    <div class="kc"><div class="kl">최신 총 재고량</div><div class="kv b">{total_qty:,.0f}</div><div class="ku">units (마지막 일자 기준)</div></div>
+                    <div class="kc"><div class="kl">기상 관측일수</div><div class="kv g">{len(weather_df)}일</div><div class="ku">동기화 완료</div></div>
+                    </div>''', unsafe_allow_html=True)
+
+                    # 품목 선택 필터
+                    selected_prod = st.selectbox("분석할 품목 선택", options=products)
+                    prod_inv = inv_df[inv_df["product_name"] == selected_prod]
+
+                    # 1. 재고 변동 차트 시각화 및 2. 데이터 무결성 검증
+                    if prod_inv.empty or prod_inv["quantity"].iloc[-1] <= 0:
+                        st.info(f"💡 [{selected_prod}] 품목은 현재 재고가 없어 차트 및 무결성 분석을 제공하지 않습니다.")
+                    else:
+                        st.markdown(f'<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>[{selected_prod}] 일별 재고 변동 추이</div>', unsafe_allow_html=True)
+                        
+                        fig, ax = plt.subplots(figsize=(10, 2.5), dpi=100)
+                        fig.patch.set_facecolor(BG)
+                        ax.set_facecolor(BG)
+                        
+                        dates_parsed = pd.to_datetime(prod_inv["date"])
+                        prod_inv = prod_inv.assign(parsed_date=dates_parsed)
+                        prod_inv = prod_inv.sort_values("parsed_date")
+                        
+                        ax.plot(prod_inv["parsed_date"], prod_inv["quantity"], color="#8ab4f8", lw=1.6, marker="o", label="재고량")
+                        ax.fill_between(prod_inv["parsed_date"], prod_inv["quantity"], alpha=0.08, color="#8ab4f8")
+                        
+                        sax(ax)
+                        ax.set_xlabel("날짜 (Date)", fontsize=8, color=TX)
+                        ax.set_ylabel("수량 (Units)", fontsize=8, color=TX)
+                        fig.tight_layout(pad=0.5)
+                        st.pyplot(fig, use_container_width=True)
+                        plt.close(fig)
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                        # 2. 데이터 무결성 검증
+                        st.markdown('<div class="sec">재고 효율성 및 데이터 무결성 관제탑</div>', unsafe_allow_html=True)
+                        latest_date = prod_inv["date"].iloc[-1]
+                        
+                        # 무결성 검증 API 호출
+                        integrity_result = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/integrity?product={selected_prod}&date={latest_date}")
+                        if integrity_result:
+                            if integrity_result.get("isConsistent", True):
+                                st.success(f"✅ 데이터 무결성 검증 완료 | {integrity_result.get('message')}")
+                            else:
+                                st.error(f"⚠️ 무결성 불일치 발생 | {integrity_result.get('message')}")

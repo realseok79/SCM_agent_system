@@ -1,20 +1,49 @@
 # dashboard/components/styles.py
 import streamlit as st
 
-BG = '#202124'
-TX = '#e8eaed'
+BG = '#0a192f'
+TX = '#ccd6f6'
 
 def sax(ax):
     ax.tick_params(colors=TX, labelsize=7)
     for spine in ax.spines.values():
-        spine.set_color('#3c4043')
-    ax.yaxis.grid(True, color="#3c4043", alpha=0.5, ls=":")
+        spine.set_color('rgba(255, 255, 255, 0.12)')
+    ax.yaxis.grid(True, color="rgba(255, 255, 255, 0.08)", alpha=0.5, ls=":")
     ax.xaxis.grid(False)
 
 def inject_custom_css():
     st.markdown("""
 <style>
-.stApp{background:#202124;color:#e8eaed}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Font application and FOUT prevention */
+html, body, [class*="css"], .stApp {
+    font-family: 'Inter', sans-serif !important;
+    font-display: swap;
+}
+
+/* Base App Deep Navy background and default text color */
+.stApp {
+    background: radial-gradient(circle at 50% 50%, #172a45, #0a192f) !important;
+    color: #ccd6f6 !important;
+}
+
+/* Streamlit container backgrounds transparent */
+[data-testid="stSidebar"],
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stAppViewContainer"] {
+    background-color: transparent !important;
+}
+
+/* Glassmorphism sidebar styling */
+[data-testid="stSidebar"] {
+    background: rgba(10, 25, 47, 0.6) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .block-container, 
 [data-testid="stMainBlockContainer"], 
 [data-testid="stAppViewBlockContainer"] {
@@ -22,29 +51,221 @@ def inject_custom_css():
     max-width: 98% !important;
     width: 98% !important;
 }
-.hdr{background:#292a2d;border-bottom:1px solid #3c4043;padding:16px 16px 10px 16px;margin:0 -1.5rem 0.6rem !important;}
-.hdr-t{font-size:16px;font-weight:600;color:#e8eaed}
-.hdr-s{font-size:11px;color:#9aa0a6;margin-top:2px}
-.sec{font-size:11px;font-weight:600;color:#9aa0a6;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #3c4043;padding-bottom:4px;margin:0.8rem 0 0.4rem}
-.kg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:0.3rem}
-.kc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 12px}
-.kc:hover{border-color:#8ab4f8}
-.kl{font-size:9px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
-.kv{font-size:22px;font-weight:400;color:#e8eaed;line-height:1.1}
-.kv.b{color:#8ab4f8}.kv.g{color:#81c995}.kv.y{color:#fdd663}.kv.r{color:#f28b82}
-.ku{font-size:9px;color:#5f6368;margin-top:2px}
-.kb{display:inline-block;font-size:8px;border-radius:3px;padding:1px 5px;margin-top:3px;border:1px solid}
-.kb.ok{background:#81c99511;color:#81c995;border-color:#81c99533}
-.kb.w{background:#f28b8211;color:#f28b82;border-color:#f28b8233}
-.cc{background:#292a2d;border:1px solid #3c4043;border-radius:6px;padding:8px 10px 4px;margin-bottom:4px}
-.ct{font-size:11px;font-weight:500;color:#e8eaed;margin-bottom:4px;display:flex;align-items:center;gap:6px}
-.dt{width:6px;height:6px;border-radius:50%;display:inline-block}
-.gt{background:#292a2d;border:1px solid #3c4043;border-radius:6px;overflow:hidden;margin-bottom:4px;width:100%}
-.gt table{width:100%;border-collapse:collapse;font-size:11px}
-.gt th{background:#303134;color:#9aa0a6;font-weight:500;font-size:9px;text-transform:uppercase;letter-spacing:.04em;padding:5px 8px;text-align:left;border-bottom:1px solid #3c4043}
-.gt td{padding:4px 8px;border-bottom:1px solid #3c4043;color:#e8eaed}
-.ep{border-radius:6px;padding:8px 12px;margin-bottom:4px;border-left:3px solid}
-.ec{background:#f28b8209;border-color:#f28b82}.ew{background:#fdd66309;border-color:#fdd663}.en{background:#81c99509;border-color:#81c995}
-.et{font-size:11px;font-weight:500;margin-bottom:3px}.eb{font-size:10px;color:#9aa0a6;line-height:1.5}
+
+/* Glassmorphism Header */
+.hdr {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 20px 24px;
+    margin: 0 -1.5rem 1rem !important;
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+}
+.hdr-t {
+    font-size: 20px;
+    font-weight: 700;
+    color: #64ffda;
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 10px rgba(100, 255, 218, 0.2);
+}
+.hdr-s {
+    font-size: 12px;
+    color: #8892b0;
+    margin-top: 4px;
+}
+
+/* Section Header */
+.sec {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64ffda;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 6px;
+    margin: 1.2rem 0 0.6rem;
+}
+
+/* Glassmorphism Grid and Cards */
+.kg {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 0.6rem;
+}
+.kc {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 12px 16px;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+.kc:hover {
+    border-color: rgba(100, 255, 218, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(100, 255, 218, 0.15);
+}
+.kl {
+    font-size: 9.5px;
+    color: #8892b0;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 5px;
+}
+.kv {
+    font-size: 24px;
+    font-weight: 600;
+    color: #ccd6f6;
+    line-height: 1.1;
+}
+.kv.b { color: #64ffda; }
+.kv.g { color: #00e5a0; }
+.kv.y { color: #ffc107; }
+.kv.r { color: #ff5c5c; }
+
+.ku {
+    font-size: 9.5px;
+    color: #8892b0;
+    margin-top: 4px;
+}
+.kb {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 500;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-top: 6px;
+    border: 1px solid;
+}
+.kb.ok {
+    background: rgba(0, 229, 160, 0.1);
+    color: #00e5a0;
+    border-color: rgba(0, 229, 160, 0.3);
+}
+.kb.w {
+    background: rgba(255, 92, 92, 0.1);
+    color: #ff5c5c;
+    border-color: rgba(255, 92, 92, 0.3);
+}
+
+.cc {
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+.cc:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+}
+.ct {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ccd6f6;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.dt {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* Glassmorphism Table */
+.gt {
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    width: 100%;
+}
+.gt table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.gt th {
+    background: rgba(255, 255, 255, 0.04);
+    color: #8892b0;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.gt td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    color: #ccd6f6;
+}
+
+.ep {
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    border-left: 4px solid;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+.ec {
+    background: rgba(255, 92, 92, 0.04);
+    border-color: #ff5c5c;
+}
+.ew {
+    background: rgba(255, 193, 7, 0.04);
+    border-color: #ffc107;
+}
+.en {
+    background: rgba(0, 229, 160, 0.04);
+    border-color: #00e5a0;
+}
+.et {
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.eb {
+    font-size: 11.5px;
+    color: #8892b0;
+    line-height: 1.6;
+}
+
+/* Custom styles for Streamlit widgets to fit Glassmorphism */
+div[data-baseweb="select"] {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+    border-radius: 8px !important;
+}
+div[role="listbox"] {
+    background-color: #0a192f !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+button[kind="primary"] {
+    background-color: #64ffda !important;
+    color: #0a192f !important;
+    font-weight: 600 !important;
+    border: none !important;
+}
+button[kind="secondary"] {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+    color: #ccd6f6 !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
 </style>
 """, unsafe_allow_html=True)
+

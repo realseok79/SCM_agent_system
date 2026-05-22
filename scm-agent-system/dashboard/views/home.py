@@ -1,12 +1,11 @@
 # dashboard/pages/home.py
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 import auth_helper
 import plotly.graph_objects as go
-from components.styles import BG, TX, sax
+from components.styles import BG, TX
 
 def render_home_dashboard():
     summary = auth_helper.api_get("/api/dashboard/summary")
@@ -144,7 +143,7 @@ def render_home_dashboard():
     chk_col1, chk_col2 = st.columns([1.8, 1.2])
 
     with chk_col1:
-        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>자동 발주 승인 대기 목록</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#ff5c5c"></span>자동 발주 승인 대기 목록</div>', unsafe_allow_html=True)
         pending_orders = auth_helper.api_get("/api/dashboard/pending-orders") or []
         
         if not pending_orders:
@@ -160,8 +159,8 @@ def render_home_dashboard():
                 reason = order.get("reason") or f"[{from_reg}] ➔ [{to_reg}] 안전재고 임계치 미달 복구용 발주"
 
                 st.markdown(f"""
-                <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; margin-bottom: 10px;">
-                    <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [안전 재고 경고] {to_reg}점 {prod} 고갈 우려</div>
+                <div class="ep ec" style="border-left-color: #ff5c5c; padding: 12px; margin-bottom: 10px;">
+                    <div class="et" style="color: #ff5c5c; font-weight: bold; font-size: 13px;">⚠️ [안전 재고 경고] {to_reg}점 {prod} 고갈 우려</div>
                     <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
                         경로: <b>{from_reg}</b> ➔ <b>{to_reg}</b> ({qty}개)<br/>
                         절감 효과: ₩{saved:,.0f}<br/>
@@ -196,7 +195,7 @@ def render_home_dashboard():
                             st.rerun()
 
                     if st.session_state.get(f"rejecting_order_{order_id}", False):
-                        st.markdown("<div style='background-color:#f28b820a; border: 1px solid #f28b8230; padding:12px; border-radius:4px; margin-top:10px;'>", unsafe_allow_html=True)
+                        st.markdown("<div style='background-color:rgba(255, 92, 92, 0.04); border: 1px solid rgba(255, 92, 92, 0.15); padding:12px; border-radius:4px; margin-top:10px;'>", unsafe_allow_html=True)
                         st.write("📋 **반려 사유 및 AI 피드백**")
                         mapping_opt = st.selectbox(
                             "어떤 컬럼의 매핑 오류가 발주 실패를 유발했습니까?",
@@ -228,18 +227,18 @@ def render_home_dashboard():
         st.markdown('</div>', unsafe_allow_html=True)
 
     with chk_col2:
-        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>실시간 물류 건강 지표</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#00e5a0"></span>실시간 물류 건강 지표</div>', unsafe_allow_html=True)
         
         # IoT health summary integration
         iot_health = auth_helper.api_get("/api/iot/health-summary") or {}
         avg_score = iot_health.get("averageHealthScore", 100.0)
         
         if avg_score >= 80.0:
-            icon, color, health_msg = "🟢", "#81c995", "전 지점 운송 경로 정상"
+            icon, color, health_msg = "🟢", "#00e5a0", "전 지점 운송 경로 정상"
         elif avg_score >= 50.0:
             icon, color, health_msg = "🟡", "#fdd663", f"일부 거점 주의 (건강도 {avg_score:.1f}점)"
         else:
-            icon, color, health_msg = "🔴", "#f28b82", f"긴급: 물류 지연 예상 (건강도 {avg_score:.1f}점)"
+            icon, color, health_msg = "🔴", "#ff5c5c", f"긴급: 물류 지연 예상 (건강도 {avg_score:.1f}점)"
 
         st.markdown(f"""
         <div class="ep en" style="border-left-color: {color}; padding: 12px; margin-bottom: 10px;">
@@ -290,8 +289,8 @@ def render_home_dashboard():
             
         if has_anomalies:
             st.markdown(f"""
-            <div class="ep ec" style="border-left-color: #f28b82; padding: 12px; min-height: 110px; background-color: #f28b820a;">
-                <div class="et" style="color: #f28b82; font-weight: bold; font-size: 13px;">⚠️ [이상 상태 감지] 창고 센서 리스크</div>
+            <div class="ep ec" style="border-left-color: #ff5c5c; padding: 12px; min-height: 110px; background-color: rgba(255, 92, 92, 0.04);">
+                <div class="et" style="color: #ff5c5c; font-weight: bold; font-size: 13px;">⚠️ [이상 상태 감지] 창고 센서 리스크</div>
                 <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
                     {anomaly_msg}
                     🤖 <b>Isolation Forest AI 분석:</b> 장비 오작동 전조 증상이 실시간 포착되었습니다. 즉시 안전 현장 점검이 권장됩니다.
@@ -302,7 +301,7 @@ def render_home_dashboard():
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ------------------ [Plotly Node-Link Map & Prescriptive Grid] ------------------
-    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#81c995"></span>지점 간 재고 자율 밸런싱 네트워크 맵 (Plotly Node-Link Map)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#00e5a0"></span>지점 간 재고 자율 밸런싱 네트워크 맵 (Plotly Node-Link Map)</div>', unsafe_allow_html=True)
     
     # Hub coordinates (Hardcoded as approved)
     HUB_COORDINATES = {
@@ -443,7 +442,7 @@ def render_home_dashboard():
             mode='markers',
             marker=dict(
                 size=10,
-                color='#ff6b6b' if is_delayed else '#81c995',
+                color='#ff5c5c' if is_delayed else '#00e5a0',
                 symbol='circle'
             ),
             hoverinfo='text',
@@ -465,7 +464,7 @@ def render_home_dashboard():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ------------------ [Prescriptive Grid UI] ------------------
-    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#f28b82"></span>의사결정 인과관계 처방 그리드 (From-To Reason Grid)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#ff5c5c"></span>의사결정 인과관계 처방 그리드 (From-To Reason Grid)</div>', unsafe_allow_html=True)
     grid_df = pd.DataFrame(rebalancing_orders)
     if not grid_df.empty:
         grid_df_display = grid_df[[
@@ -507,22 +506,47 @@ def render_home_dashboard():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 최근 7일 재고 추이 시각화
-    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>최근 7일간 전체 재고 추이 (REST 집계)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#00e5a0"></span>최근 7일간 전체 재고 추이 (REST 집계)</div>', unsafe_allow_html=True)
     trend_data = auth_helper.api_get("/api/dashboard/stock-trend")
     if trend_data:
         df = pd.DataFrame(trend_data)
-        fig, ax = plt.subplots(figsize=(10, 2.5), dpi=100)
-        fig.patch.set_facecolor(BG)
-        ax.set_facecolor(BG)
-        ax.plot(df["date"], df["quantity"], color="#8ab4f8", lw=1.8, marker="o", label="전체 재고 합계")
-        ax.fill_between(df["date"], df["quantity"], alpha=0.08, color="#8ab4f8")
-        sax(ax)
-        ax.set_xlabel("일자 (Date)", fontsize=8, color=TX)
-        ax.set_ylabel("수량 (Units)", fontsize=8, color=TX)
-        ax.legend(fontsize=7, framealpha=0, loc="upper left", labelcolor=TX)
-        fig.tight_layout(pad=0.5)
-        st.pyplot(fig, use_container_width=True)
-        plt.close(fig)
+        
+        # Plotly dark theme chart with neon-emerald line and mint semi-transparent fill
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df["date"],
+            y=df["quantity"],
+            mode="lines+markers",
+            name="전체 재고 합계",
+            line=dict(color="#00e5a0", width=2.5),
+            marker=dict(color="#7effc8", size=6, line=dict(color="#00e5a0", width=1.5)),
+            fill="tozeroy",
+            fillcolor="rgba(126, 255, 200, 0.06)",
+            hoverinfo="x+y"
+        ))
+        
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0, 0, 0, 0)",
+            plot_bgcolor="rgba(0, 0, 0, 0)",
+            font=dict(color=TX, family="Inter, sans-serif"),
+            margin=dict(l=40, r=20, t=10, b=40),
+            height=260,
+            showlegend=False,
+            xaxis=dict(
+                gridcolor="rgba(255, 255, 255, 0.06)",
+                linecolor="rgba(255, 255, 255, 0.12)",
+                tickfont=dict(color=TX, size=9),
+                title=dict(text="일자 (Date)", font=dict(color=TX, size=10))
+            ),
+            yaxis=dict(
+                gridcolor="rgba(255, 255, 255, 0.06)",
+                linecolor="rgba(255, 255, 255, 0.12)",
+                tickfont=dict(color=TX, size=9),
+                title=dict(text="수량 (Units)", font=dict(color=TX, size=10))
+            )
+        )
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("💡 차트를 그리기 위한 데이터가 부족합니다.")
     st.markdown('</div>', unsafe_allow_html=True)

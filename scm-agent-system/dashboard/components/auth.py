@@ -7,14 +7,14 @@ def render_login_page():
     <style>
     /* Premium background radial gradient */
     .stApp {
-        background: radial-gradient(circle at 50% 50%, #171923, #0a0b10) !important;
+        background: radial-gradient(circle at 50% 50%, #172a45, #0a192f) !important;
     }
     </style>
     <div style="text-align: center; padding: 3rem 0 1rem 0;">
-        <h1 style="font-size: 2.5rem; font-weight: 800; color: #8ab4f8; margin-bottom: 0.5rem; letter-spacing: -0.03em; text-shadow: 0 0 30px rgba(138,180,248,0.25);">
+        <h1 style="font-size: 2.5rem; font-weight: 800; color: #64ffda; margin-bottom: 0.5rem; letter-spacing: -0.03em; text-shadow: 0 0 30px rgba(100,255,218,0.25);">
             🛰️ SCM Agent Control Tower
         </h1>
-        <p style="color: #a0aec0; font-size: 1rem; margin-bottom: 2rem; letter-spacing: 0.02em;">
+        <p style="color: #8892b0; font-size: 1rem; margin-bottom: 2rem; letter-spacing: 0.02em;">
             지능형 공급망 및 자율 재고 조율 시스템 관제탑
         </p>
     </div>
@@ -23,8 +23,8 @@ def render_login_page():
     c1, c2, c3 = st.columns([1, 1.3, 1])
     with c2:
         st.markdown("""
-        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 28px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); margin-bottom: 20px;">
-            <div style="font-size: 1.15rem; font-weight: 700; color: #e2e8f0; margin-bottom: 18px; text-align: center; letter-spacing: 0.08em;">🔒 SECURE ACCESS LOGIN</div>
+        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(100, 255, 218, 0.15); border-radius: 16px; padding: 28px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); margin-bottom: 20px;">
+            <div style="font-size: 1.15rem; font-weight: 700; color: #ccd6f6; margin-bottom: 18px; text-align: center; letter-spacing: 0.08em; text-shadow: 0 0 10px rgba(100,255,218,0.1);">🔒 SECURE ACCESS LOGIN</div>
         """, unsafe_allow_html=True)
         
         with st.form("login_form", clear_on_submit=False):

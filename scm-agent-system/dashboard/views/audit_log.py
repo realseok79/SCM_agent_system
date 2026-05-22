@@ -3,7 +3,10 @@ import streamlit as st
 import pandas as pd
 import auth_helper
 
+from components.styles import inject_custom_css
+
 def render_audit_log_dashboard():
+    inject_custom_css()
     st.markdown(f'<div class="hdr"><div><div class="hdr-t">📋 시스템 감사 로그 (Audit Logs)</div><div class="hdr-s">SCM 시스템의 모든 주요 상태 변화, 자동 재배정 주문 승인/반려 및 장비 작동 기록을 추적합니다.</div></div></div>', unsafe_allow_html=True)
 
     # Fetch logs
