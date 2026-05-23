@@ -26,10 +26,10 @@ def render_risk_dashboard():
             if insight:
                 source = insight.get("source", "RULE_ENGINE")
                 if source == "LLM":
-                    badge_html = '<span style="background-color: #8a3ffc; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">🤖 AI Diagnosed</span>'
+                    badge_html = '<span style="background-color: #8a3ffc; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">AI Diagnosed</span>'
                 else:
-                    badge_html = '<span style="background-color: #0043ce; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">⚙️ Rule Engine</span>'
-            insight_msg = f"<br/><b>🤖 LLM 최적 처방 (XAI):</b> {insight.get('actionPlanMsg')} {badge_html}" if insight and insight.get('actionPlanMsg') else ""
+                    badge_html = '<span style="background-color: #0043ce; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">Rule Engine</span>'
+            insight_msg = f"<br/><b>LLM 최적 처방 (XAI):</b> {insight.get('actionPlanMsg')} {badge_html}" if insight and insight.get('actionPlanMsg') else ""
 
             import re
             desc_text = risk.get('description', '')
@@ -54,7 +54,7 @@ def render_risk_dashboard():
 
             st.markdown(f"""
             <div class="ep" style="border-left-color: {color}; background-color: {bg_color}; padding: 12px; margin-bottom: 8px;">
-                <div class="et" style="color: {color}; font-weight: bold;">📍 {r['regionName']} ({code}) - Risk Level: {level}</div>
+                <div class="et" style="color: {color}; font-weight: bold;">{r['regionName']} ({code}) - Risk Level: {level}</div>
                 <div class="eb" style="color: #e8eaed; font-size: 12px; margin-top: 4px; margin-bottom: 10px;">
                     위험도 지수: <b>{risk.get('riskScore'):.1f} 점</b> <br/>
                     상세 상태: {risk.get('description')}{insight_msg}
@@ -69,15 +69,15 @@ def render_risk_dashboard():
                     status_color = "🔴" if iot_health_val < 80.0 else "🟢"
                     st.markdown(f"""
                     <div style='background-color:#111827; border: 1px solid #374151; padding:10px 14px; border-radius:6px; margin-bottom:15px;'>
-                        <div style='font-size:11px; color:#9ca3af;'>📡 창고 IoT 센서 건강도</div>
+                        <div style='font-size:11px; color:#9ca3af;'>창고 IoT 센서 건강도</div>
                         <div style='font-size:16px; font-weight:bold; color:#f3f4f6; margin-top:4px;'>{status_color} {iot_health_val:.1f} 점</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown("""
                     <div style='background-color:#111827; border: 1px solid #374151; padding:10px 14px; border-radius:6px; margin-bottom:15px;'>
-                        <div style='font-size:11px; color:#9ca3af;'>📡 창고 IoT 센서 건강도</div>
-                        <div style='font-size:16px; font-weight:bold; color:#9ca3af; margin-top:4px;'>⚪ 미연동 (Off-line)</div>
+                        <div style='font-size:11px; color:#9ca3af;'>창고 IoT 센서 건강도</div>
+                        <div style='font-size:16px; font-weight:bold; color:#9ca3af; margin-top:4px;'>미연동 (Off-line)</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -86,14 +86,14 @@ def render_risk_dashboard():
                     status_color = "🔴" if port_congestion_val > 50.0 else ("🟡" if port_congestion_val > 25.0 else "🟢")
                     st.markdown(f"""
                     <div style='background-color:#111827; border: 1px solid #374151; padding:10px 14px; border-radius:6px; margin-bottom:15px;'>
-                        <div style='font-size:11px; color:#9ca3af;'>🚢 해역 항만 혼잡도</div>
+                        <div style='font-size:11px; color:#9ca3af;'>해역 항만 혼잡도</div>
                         <div style='font-size:16px; font-weight:bold; color:#f3f4f6; margin-top:4px;'>{status_color} {port_congestion_val:.1f} 점</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown("""
                     <div style='background-color:#111827; border: 1px solid #374151; padding:10px 14px; border-radius:6px; margin-bottom:15px;'>
-                        <div style='font-size:11px; color:#9ca3af;'>🚢 해역 항만 혼잡도</div>
-                        <div style='font-size:16px; font-weight:bold; color:#9ca3af; margin-top:4px;'>⚪ 미연동 (Off-line)</div>
+                        <div style='font-size:11px; color:#9ca3af;'>해역 항만 혼잡도</div>
+                        <div style='font-size:16px; font-weight:bold; color:#9ca3af; margin-top:4px;'>미연동 (Off-line)</div>
                     </div>
                     """, unsafe_allow_html=True)

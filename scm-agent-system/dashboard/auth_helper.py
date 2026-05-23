@@ -2,8 +2,9 @@
 import requests
 import streamlit as st
 import time
+import os
 
-API_BASE_URL = st.sidebar.text_input("Backend API URL", "http://localhost:8080")
+API_BASE_URL = st.sidebar.text_input("Backend API URL", os.getenv("BACKEND_URL", "http://localhost:8080"))
 
 def api_login(username, password):
     """
@@ -63,6 +64,7 @@ def check_auth_or_refresh():
         return api_refresh()
     return True
 
+@st.cache_data(ttl=2)
 def api_get(endpoint):
     """
     인증 헤더를 포함해 백엔드 API로부터 GET 요청을 보냅니다.
@@ -74,6 +76,9 @@ def api_get(endpoint):
         res = requests.get(f"{API_BASE_URL}{endpoint}", headers=headers, timeout=10)
         if res.status_code == 200:
             return res.json()
+        elif res.status_code == 401:
+            api_logout()
+            st.rerun()
     except Exception as e:
         print(f"API GET {endpoint} failed: {e}")
     return None
@@ -88,7 +93,11 @@ def api_post(endpoint, payload):
     try:
         res = requests.post(f"{API_BASE_URL}{endpoint}", json=payload, headers=headers, timeout=10)
         if res.status_code == 200:
+            st.cache_data.clear() # Mutating call: Clear cache!
             return res.json()
+        elif res.status_code == 401:
+            api_logout()
+            st.rerun()
     except Exception as e:
         print(f"API POST {endpoint} failed: {e}")
     return None
@@ -103,7 +112,11 @@ def api_delete(endpoint):
     try:
         res = requests.delete(f"{API_BASE_URL}{endpoint}", headers=headers, timeout=10)
         if res.status_code in [200, 204]:
+            st.cache_data.clear() # Mutating call: Clear cache!
             return True
+        elif res.status_code == 401:
+            api_logout()
+            st.rerun()
     except Exception as e:
         print(f"API DELETE {endpoint} failed: {e}")
     return False
@@ -118,7 +131,11 @@ def api_patch(endpoint, payload):
     try:
         res = requests.patch(f"{API_BASE_URL}{endpoint}", json=payload, headers=headers, timeout=10)
         if res.status_code == 200:
+            st.cache_data.clear() # Mutating call: Clear cache!
             return res.json()
+        elif res.status_code == 401:
+            api_logout()
+            st.rerun()
     except Exception as e:
         print(f"API PATCH {endpoint} failed: {e}")
     return None

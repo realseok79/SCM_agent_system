@@ -5,9 +5,45 @@ import os
 from datetime import datetime
 import auth_helper
 import plotly.graph_objects as go
-from components.styles import BG, TX
+from components.styles import inject_custom_css, BG, TX
+from components.xai_trace import render_xai_trace
+
+@st.cache_data(ttl=5)
+def check_regions_anomalies(regions, access_token, ml_api_url):
+    has_anomalies = False
+    anomaly_msg = ""
+    import requests
+    headers = {"Authorization": f"Bearer {access_token}"}
+    for r in regions:
+        code = r["regionCode"]
+        if "Seoul" in r["regionName"] or "서울" in r["regionName"]:
+            telemetry = [
+                {"temperature": 22.0, "humidity": 45.0, "vibration": 0.05},
+                {"temperature": 22.5, "humidity": 46.0, "vibration": 0.04},
+                {"temperature": 23.0, "humidity": 44.0, "vibration": 0.05},
+                {"temperature": 39.8, "humidity": 85.0, "vibration": 1.95}
+            ]
+        else:
+            telemetry = [
+                {"temperature": 21.0, "humidity": 40.0, "vibration": 0.02},
+                {"temperature": 21.2, "humidity": 40.5, "vibration": 0.03},
+                {"temperature": 21.5, "humidity": 41.0, "vibration": 0.02},
+                {"temperature": 21.1, "humidity": 40.2, "vibration": 0.03}
+            ]
+        payload = {"telemetry_logs": telemetry}
+        try:
+            res = requests.post(f"{ml_api_url}/api/v1/ml/anomaly-score", json=payload, headers=headers, timeout=1.0)
+            if res.status_code == 200:
+                ml_res = res.json()
+                if ml_res.get("is_anomaly", []) and ml_res["is_anomaly"][-1] == -1:
+                    has_anomalies = True
+                    anomaly_msg += f"🚨 <b>{r['regionName']} ({code})</b>: 비정상 고온(39.8°C) 및 과진동(1.95) 감지!<br/>"
+        except Exception:
+            pass
+    return has_anomalies, anomaly_msg
 
 def render_home_dashboard():
+    inject_custom_css()
     summary = auth_helper.api_get("/api/dashboard/summary")
     if not summary:
         st.warning("⚠️ 백엔드 서비스와 통신할 수 없거나 세션이 만료되었습니다. 로그인 상태를 확인해 주세요.")
@@ -24,12 +60,12 @@ def render_home_dashboard():
 <div class="kc"><div class="kl">관제 시스템 상태</div><div class="kv g">{summary.get("systemStatus", "STABLE")}</div><div class="ku">서버 정상 작동 유무</div><div class="kb ok">정상</div></div>
 </div>''', unsafe_allow_html=True)
 
-    # 🧪 데모 시뮬레이션 모드 전용 대시보드
+    # 데모 시뮬레이션 모드 전용 대시보드
     if st.session_state.get("demo_mode", False):
         with st.container():
             st.markdown("""
             <div style="background-color: #1a202c; border: 1px solid #e53e3e; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
-                <h4 style="color: #e53e3e; margin-top: 0;">🧪 데모 시뮬레이션 컨트롤 타워</h4>
+                <h4 style="color: #e53e3e; margin-top: 0;">데모 시뮬레이션 컨트롤 타워</h4>
                 <p style="font-size: 13px; color: #a0aec0;">데모 모드 활성화 상태입니다. 아래 버튼을 클릭하여 SCM 시스템에 실시간 비상 시나리오 이벤트를 주입해보세요.</p>
             </div>
             """, unsafe_allow_html=True)
@@ -39,7 +75,7 @@ def render_home_dashboard():
                 if st.button("🚨 가상 고위험(HIGH) 경보 생성", use_container_width=True):
                     import requests
                     try:
-                        requests.post("http://localhost:8080/api/audit-logs", json={
+                        requests.post(f"{auth_helper.API_BASE_URL}/api/audit-logs", json={
                             "eventType": "RISK_ALERT",
                             "message": "🚨 [데모] 수도권 Hub(KR-SL) 지점의 기상 이변(집중 호우)으로 인해 물류 지연 리스크 레벨이 HIGH로 상승했습니다.",
                             "triggeredBy": "DEMO_AGENT"
@@ -52,7 +88,7 @@ def render_home_dashboard():
                 if st.button("🛠️ IoT 디바이스 점검(MAINTENANCE) 설정", use_container_width=True):
                     import requests
                     try:
-                        requests.post("http://localhost:8080/api/audit-logs", json={
+                        requests.post(f"{auth_helper.API_BASE_URL}/api/audit-logs", json={
                             "eventType": "DEVICE_MAINTENANCE",
                             "message": "🛠️ [데모] KR-SL 지점의 온도 센서(TEMP-001)의 노이즈 감지로 인해 시스템이 점검 상태로 전환되었습니다.",
                             "triggeredBy": "DEMO_AGENT"
@@ -65,7 +101,7 @@ def render_home_dashboard():
                 if st.button("🟢 자율 재배정 승인(APPROVED) 발생", use_container_width=True):
                     import requests
                     try:
-                        requests.post("http://localhost:8080/api/audit-logs", json={
+                        requests.post(f"{auth_helper.API_BASE_URL}/api/audit-logs", json={
                             "eventType": "ORDER_APPROVED",
                             "message": "🟢 [데모] 영남권물류 Center 재고 결핍으로 수도권중앙 Hub에서 150개 자동 이송 주문(ORD-999) 승인 완료",
                             "triggeredBy": "DEMO_AGENT"
@@ -78,9 +114,9 @@ def render_home_dashboard():
     # 0. API 호출로 재고 조정 주문 목록 수신 및 누적 절감 물류비 집계
     rebalancing_orders = auth_helper.api_get("/api/dashboard/rebalancing-orders")
     
-    # Fallback to realistic demo data ONLY if SCM_DEMO_MODE=true is injected
+    # Fallback to realistic demo data ONLY if SCM_DEMO_MODE=true or session_state.demo_mode is true
     if not rebalancing_orders:
-        demo_mode = os.getenv("SCM_DEMO_MODE", "false").lower() == "true"
+        demo_mode = os.getenv("SCM_DEMO_MODE", "false").lower() == "true" or st.session_state.get("demo_mode", False)
         if demo_mode:
             rebalancing_orders = [
                 {
@@ -125,26 +161,49 @@ def render_home_dashboard():
     col_metric, col_status = st.columns([2, 1])
     with col_metric:
         st.metric(
-            label="💡 AI 자율 재고 조정 누적 절감 물류비 (TC)",
+            label="AI 자율 재고 조정 누적 절감 물류비 (TC)",
             value=f"₩{total_saved_cost:,.0f}",
             delta=f"⬆ ₩{summary.get('savedCostDelta', 0):,.0f} (전일 대비)",
             delta_color="normal"
         )
     with col_status:
         st.metric(
-            label="⚡ 실시간 의사결정 경로 수",
+            label="실시간 의사결정 경로 수",
             value=f"{len(rebalancing_orders)}개 최적화 링크",
             delta="정상 작동 중",
             delta_color="off"
         )
 
     # SCM 운영 및 발주 체크리스트 추가
-    st.markdown("### 📋 오늘의 SCM 운영 및 발주 체크리스트")
+    st.markdown("### 오늘의 SCM 운영 및 발주 체크리스트")
     chk_col1, chk_col2 = st.columns([1.8, 1.2])
 
     with chk_col1:
         st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#ff5c5c"></span>자동 발주 승인 대기 목록</div>', unsafe_allow_html=True)
-        pending_orders = auth_helper.api_get("/api/dashboard/pending-orders") or []
+        pending_orders = auth_helper.api_get("/api/dashboard/pending-orders")
+        if not pending_orders and (os.getenv("SCM_DEMO_MODE", "false").lower() == "true" or st.session_state.get("demo_mode", False)):
+            pending_orders = [
+                {
+                    "transferId": 201,
+                    "productName": "마스크_KF94",
+                    "fromRegion": "수도권중앙Hub",
+                    "toRegion": "영남권물류Center",
+                    "transferQty": 3000,
+                    "savedCost": 1500000,
+                    "status": "PENDING",
+                    "reason": "[예산 초과 경고] 지점 예산 5,000,000원 대비 발주액 45,000,000원 초과"
+                },
+                {
+                    "transferId": 202,
+                    "productName": "반도체_부품_8",
+                    "fromRegion": "중부권물류Center",
+                    "toRegion": "호남권물류Center",
+                    "transferQty": 900,
+                    "savedCost": 4500000,
+                    "status": "PENDING",
+                    "reason": "[시장 변동성 감지] 데이터 드리프트 지수(α=1.8) 임계치 초과"
+                }
+            ]
         
         if not pending_orders:
             st.info("✅ 대기 중인 자동 발주 요청이 없습니다.")
@@ -172,11 +231,11 @@ def render_home_dashboard():
 
                 user_role = st.session_state.get("user_role", "ROLE_USER")
                 if user_role == "ROLE_EXECUTIVE":
-                    st.info("🔒 [읽기 전용] 경영진 계정은 발주 승인 및 반려 피드백 조작 권한이 없습니다.")
+                    st.info("[읽기 전용] 경영진 계정은 발주 승인 및 반려 피드백 조작 권한이 없습니다.")
                 elif user_role == "ROLE_LOGISTICS":
                     col1, = st.columns([1])
                     with col1:
-                        if st.button("📥 자동 발주 승인", key=f"btn_approve_{order_id}", use_container_width=True):
+                        if st.button("자동 발주 승인", key=f"btn_approve_{order_id}", use_container_width=True):
                             res = auth_helper.api_post(f"/api/orders/{order_id}/approve", {})
                             if res:
                                 st.success(f"주문 #{order_id} 승인 완료")
@@ -184,19 +243,19 @@ def render_home_dashboard():
                 else: # ROLE_ADMIN
                     col_app, col_rej = st.columns([1, 1])
                     with col_app:
-                        if st.button("📥 자동 발주 승인", key=f"btn_approve_{order_id}", use_container_width=True):
+                        if st.button("자동 발주 승인", key=f"btn_approve_{order_id}", use_container_width=True):
                             res = auth_helper.api_post(f"/api/orders/{order_id}/approve", {})
                             if res:
                                 st.success(f"주문 #{order_id} 승인 완료")
                                 st.rerun()
                     with col_rej:
-                        if st.button("❌ 반려 및 AI 피드백", key=f"btn_reject_init_{order_id}", use_container_width=True):
+                        if st.button("반려 및 AI 피드백", key=f"btn_reject_init_{order_id}", use_container_width=True):
                             st.session_state[f"rejecting_order_{order_id}"] = True
                             st.rerun()
 
                     if st.session_state.get(f"rejecting_order_{order_id}", False):
                         st.markdown("<div style='background-color:rgba(255, 92, 92, 0.04); border: 1px solid rgba(255, 92, 92, 0.15); padding:12px; border-radius:4px; margin-top:10px;'>", unsafe_allow_html=True)
-                        st.write("📋 **반려 사유 및 AI 피드백**")
+                        st.write("**반려 사유 및 AI 피드백**")
                         mapping_opt = st.selectbox(
                             "어떤 컬럼의 매핑 오류가 발주 실패를 유발했습니까?",
                             options=[
@@ -254,36 +313,10 @@ def render_home_dashboard():
         has_anomalies = False
         anomaly_msg = ""
         try:
-            import requests
             regions = auth_helper.api_get("/api/regions") or []
-            headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
-            
-            for r in regions:
-                code = r["regionCode"]
-                # 서울/Seoul hub gets dummy anomaly data to demonstrate ML warning
-                if "Seoul" in r["regionName"] or "서울" in r["regionName"]:
-                    telemetry = [
-                        {"temperature": 22.0, "humidity": 45.0, "vibration": 0.05},
-                        {"temperature": 22.5, "humidity": 46.0, "vibration": 0.04},
-                        {"temperature": 23.0, "humidity": 44.0, "vibration": 0.05},
-                        {"temperature": 39.8, "humidity": 85.0, "vibration": 1.95} # Outlier!
-                    ]
-                else:
-                    telemetry = [
-                        {"temperature": 21.0, "humidity": 40.0, "vibration": 0.02},
-                        {"temperature": 21.2, "humidity": 40.5, "vibration": 0.03},
-                        {"temperature": 21.5, "humidity": 41.0, "vibration": 0.02},
-                        {"temperature": 21.1, "humidity": 40.2, "vibration": 0.03}
-                    ]
-                
-                payload = {"telemetry_logs": telemetry}
-                res = requests.post(f"{auth_helper.API_BASE_URL}/api/v1/ml/anomaly-score", json=payload, headers=headers, timeout=2.0)
-                if res.status_code == 200:
-                    ml_res = res.json()
-                    # If the last log is anomalous (-1)
-                    if ml_res.get("is_anomaly", []) and ml_res["is_anomaly"][-1] == -1:
-                        has_anomalies = True
-                        anomaly_msg += f"🚨 <b>{r['regionName']} ({code})</b>: 비정상 고온(39.8°C) 및 과진동(1.95) 감지!<br/>"
+            access_token = st.session_state.get('access_token', '')
+            ml_api_url = os.getenv("ML_API_URL", "http://localhost:8000")
+            has_anomalies, anomaly_msg = check_regions_anomalies(regions, access_token, ml_api_url)
         except Exception:
             pass
             
@@ -293,175 +326,15 @@ def render_home_dashboard():
                 <div class="et" style="color: #ff5c5c; font-weight: bold; font-size: 13px;">⚠️ [이상 상태 감지] 창고 센서 리스크</div>
                 <div class="eb" style="font-size: 12px; margin-top: 5px; color: #e8eaed;">
                     {anomaly_msg}
-                    🤖 <b>Isolation Forest AI 분석:</b> 장비 오작동 전조 증상이 실시간 포착되었습니다. 즉시 안전 현장 점검이 권장됩니다.
+                    <b>Isolation Forest AI 분석:</b> 장비 오작동 전조 증상이 실시간 포착되었습니다. 즉시 안전 현장 점검이 권장됩니다.
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ------------------ [Plotly Node-Link Map & Prescriptive Grid] ------------------
-    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#00e5a0"></span>지점 간 재고 자율 밸런싱 네트워크 맵 (Plotly Node-Link Map)</div>', unsafe_allow_html=True)
-    
-    # Hub coordinates (Hardcoded as approved)
-    HUB_COORDINATES = {
-        "수도권중앙Hub": [37.5665, 126.9780],
-        "영남권물류Center": [35.5384, 129.3114],
-        "호남권물류Center": [35.1595, 126.8526],
-        "중부권물류Center": [36.3504, 127.3845],
-        "GLOBAL_ORDER": [37.4563, 126.7052],
-        "수도권": [37.5665, 126.9780],
-        "영남": [35.5384, 129.3114],
-        "호남": [35.1595, 126.8526],
-        "중부": [36.3504, 127.3845],
-    }
 
-    # Gather nodes
-    unique_nodes = set()
-    for o in rebalancing_orders:
-        unique_nodes.add(o.get("fromRegion", "수도권중앙Hub"))
-        unique_nodes.add(o.get("toRegion", "GLOBAL_ORDER"))
-    
-    unique_nodes.update(["수도권중앙Hub", "영남권물류Center", "호남권물류Center", "중부권물류Center"])
-    
-    node_lats = []
-    node_lons = []
-    node_names = []
-    for node in unique_nodes:
-        coords = None
-        for key, val in HUB_COORDINATES.items():
-            if key in node:
-                coords = val
-                break
-        if coords is None:
-            coords = HUB_COORDINATES["수도권중앙Hub"]
-        node_lats.append(coords[0])
-        node_lons.append(coords[1])
-        node_names.append(node)
 
-    fig = go.Figure()
-    
-    # Render nodes
-    fig.add_trace(go.Scattermapbox(
-        lat=node_lats,
-        lon=node_lons,
-        mode='markers+text',
-        marker=dict(
-            size=14,
-            color='#ff5a5f',
-            opacity=0.9
-        ),
-        text=node_names,
-        textposition="top center",
-        textfont=dict(color="#ffffff", size=9),
-        hoverinfo='text',
-        hovertext=node_names,
-        name="물류 거점"
-    ))
-
-    # Render links
-    for idx, order in enumerate(rebalancing_orders):
-        from_n = order.get("fromRegion", "수도권중앙Hub")
-        to_n = order.get("toRegion", "GLOBAL_ORDER")
-        qty = order.get("transferQty", 100)
-        saved = order.get("savedCost", 0)
-        reason = order.get("reason", "")
-        prod = order.get("productName", "")
-
-        # Get coordinates
-        from_c = None
-        for key, val in HUB_COORDINATES.items():
-            if key in from_n:
-                from_c = val
-                break
-        if from_c is None:
-            from_c = HUB_COORDINATES["수도권중앙Hub"]
-
-        to_c = None
-        for key, val in HUB_COORDINATES.items():
-            if key in to_n:
-                to_c = val
-                break
-        if to_c is None:
-            to_c = HUB_COORDINATES["GLOBAL_ORDER"]
-
-        # ── Day 7: XGBoost Predict Agent - Lead Time Integration ──
-        weather_score = 6.8 if "Hub" in from_n else 2.1 # high weather score to trigger warning for demo
-        port_score = 48.0 if "Center" in to_n else 10.0
-        pred_days = 2.8
-        try:
-            import requests
-            headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
-            payload = {
-                "route_id": f"{from_n}_{to_n}",
-                "weather_score": weather_score,
-                "port_congestion_score": port_score,
-                "historical_lead_times": [2.5, 3.0, 2.7, 3.1]
-            }
-            res = requests.post(f"{auth_helper.API_BASE_URL}/api/v1/ml/predict-leadtime", json=payload, headers=headers, timeout=1.5)
-            if res.status_code == 200:
-                ml_res = res.json()
-                pred_days = ml_res.get("predicted_lead_time_days", 2.8)
-        except Exception:
-            pass
-
-        # Line thickness relative to quantity
-        line_w = max(2.0, min(8.0, qty / 50.0))
-        
-        # If predicted lead time > 3.2 days, flag as DELAYED (Red Dashed Line)
-        is_delayed = pred_days > 3.2
-        line_color = '#ff6b6b' if is_delayed else '#8ab4f8'
-        line_dash = 'dash' if is_delayed else 'solid'
-        
-        hover_text = (
-            f"<b>품목:</b> {prod}<br>"
-            f"<b>경로:</b> {from_n} ➔ {to_n}<br>"
-            f"<b>이송 수량:</b> {qty:,} units<br>"
-            f"<b>🤖 XGBoost 예상 리드타임:</b> <span style='color:{line_color}'><b>{pred_days:.2f} 일</b></span> {'⚠️ (지연 위험)' if is_delayed else '🟢 (안정)'}<br>"
-            f"<b>물류비 절감:</b> ₩{saved:,}<br>"
-            f"<b>처방 근거 (XAI):</b> {reason}"
-        )
-
-        # Path Line (Dashed red if ML predicts delay risk)
-        fig.add_trace(go.Scattermapbox(
-            lat=[from_c[0], to_c[0]],
-            lon=[from_c[1], to_c[1]],
-            mode='lines',
-            line=dict(width=line_w, color=line_color, dash=line_dash),
-            hoverinfo='text',
-            hovertext=hover_text,
-            name=f"최적 경로 {idx+1}"
-        ))
-
-        # Midpoint indicator
-        mid_lat = (from_c[0] + to_c[0]) / 2.0
-        mid_lon = (from_c[1] + to_c[1]) / 2.0
-        fig.add_trace(go.Scattermapbox(
-            lat=[mid_lat],
-            lon=[mid_lon],
-            mode='markers',
-            marker=dict(
-                size=10,
-                color='#ff5c5c' if is_delayed else '#00e5a0',
-                symbol='circle'
-            ),
-            hoverinfo='text',
-            hovertext=hover_text,
-            name=f"최적 경로 {idx+1} 상세"
-        ))
-
-    fig.update_layout(
-        mapbox=dict(
-            style="carto-darkmatter",
-            center=dict(lat=36.0, lon=127.8),
-            zoom=6.1
-        ),
-        margin=dict(l=0, r=0, t=0, b=0),
-        showlegend=False,
-        height=400
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # ------------------ [Prescriptive Grid UI] ------------------
     st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#ff5c5c"></span>의사결정 인과관계 처방 그리드 (From-To Reason Grid)</div>', unsafe_allow_html=True)
@@ -502,7 +375,7 @@ def render_home_dashboard():
             hide_index=True
         )
     else:
-        st.info("💡 처방 그리드 데이터가 존재하지 않습니다.")
+        st.info("처방 그리드 데이터가 존재하지 않습니다.")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 최근 7일 재고 추이 시각화
@@ -548,5 +421,55 @@ def render_home_dashboard():
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("💡 차트를 그리기 위한 데이터가 부족합니다.")
+        st.info("차트를 그리기 위한 데이터가 부족합니다.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ------------------ [AI Decision XAI Trace UI] ------------------
+    st.markdown('<div class="cc"><div class="ct"><span class="dt" style="background:#64ffda"></span>🔍 AI 자율 의사결정 연쇄 추론 추적 (HITL XAI Trace)</div>', unsafe_allow_html=True)
+    
+    # Compile a list of all trackable orders (both completed and pending)
+    all_trace_orders = []
+    if rebalancing_orders:
+        for o in rebalancing_orders:
+            all_trace_orders.append({
+                "id": o.get("transferId"),
+                "name": f"🟢 [승인됨] {o.get('fromRegion')} ➔ {o.get('toRegion')} ({o.get('productName')}, {o.get('transferQty')}개)",
+                "data": o,
+                "is_pending": False
+            })
+    if pending_orders:
+        for o in pending_orders:
+            all_trace_orders.append({
+                "id": o.get("transferId"),
+                "name": f"⚠️ [대기중] {o.get('fromRegion')} ➔ {o.get('toRegion')} ({o.get('productName')}, {o.get('transferQty')}개)",
+                "data": o,
+                "is_pending": True
+            })
+            
+    if all_trace_orders:
+        # Load active selected order index from session_state to prevent resetting
+        if "selected_trace_order_id" not in st.session_state:
+            st.session_state["selected_trace_order_id"] = all_trace_orders[0]["id"]
+            
+        # Determine the current selected index in the options
+        default_index = 0
+        for i, val in enumerate(all_trace_orders):
+            if val["id"] == st.session_state["selected_trace_order_id"]:
+                default_index = i
+                break
+                
+        selected_trace = st.selectbox(
+            "상세 추론 및 의사결정 경로를 분석할 SCM 자율 발주 건을 선택하십시오.",
+            options=all_trace_orders,
+            index=default_index,
+            format_func=lambda x: x["name"],
+            key="trace_order_select_box"
+        )
+        
+        if selected_trace:
+            # Store selected trace id in session_state to persist on re-runs
+            st.session_state["selected_trace_order_id"] = selected_trace["id"]
+            render_xai_trace(selected_trace["data"], selected_trace["is_pending"])
+    else:
+        st.info("💡 데모 시뮬레이션 모드를 활성화하거나 백엔드에 발주 데이터가 유입되면 실시간 AI 의사결정 추적 분석기가 가동됩니다.")
     st.markdown('</div>', unsafe_allow_html=True)

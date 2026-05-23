@@ -3,18 +3,8 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
-from matplotlib import rc
 import auth_helper
 from components.styles import inject_custom_css, BG, TX, sax
-
-# Matplotlib 한글 폰트 설정
-plt.rcParams["axes.unicode_minus"] = False
-for f in ["AppleGothic", "NanumGothic", "Malgun Gothic"]:
-    try:
-        rc("font", family=f)
-        break
-    except:
-        continue
 
 def show():
     # CSS 스타일 주입 (개별 뷰에서도 스타일이 유지되도록 처리)

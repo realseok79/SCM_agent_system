@@ -34,12 +34,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      analysis-service:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/scm_enterprise
       DB_USERNAME: scm_admin
       DB_PASSWORD: ${DB_PASSWORD:-scm_secure_2026}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       SPRING_PROFILES_ACTIVE: dev
+      SCM_ANALYSIS_SERVICE_URL: http://analysis-service:8090
     ports:
       - "8080:8080"
     healthcheck:
@@ -62,9 +65,12 @@ services:
         condition: service_healthy
       ml-api:
         condition: service_started
+      analysis-service:
+        condition: service_healthy
     environment:
       BACKEND_URL: http://backend:8080
       ML_API_URL: http://ml-api:8000
+      ANALYSIS_SERVICE_URL: http://analysis-service:8090
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "8501:8501"
@@ -87,6 +93,26 @@ services:
     networks:
       - scm-network
 
+  # ── 5. AI/Excel 분석용 Microservice (Python FastAPI) ──
+  analysis-service:
+    build:
+      context: ./scm-agent-backend/analysis-microservice
+      dockerfile: Dockerfile
+    container_name: scm-analysis-service
+    ports:
+      - "8090:8090"
+    restart: on-failure
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-dummy-key}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - scm-network
+
 volumes:
   pgdata:
     driver: local
@@ -94,4 +120,3 @@ volumes:
 networks:
   scm-network:
     driver: bridge
-

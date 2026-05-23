@@ -3,19 +3,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import rc
 import auth_helper
 from agents.baseline_agent import BaselineAgent
 from components.styles import inject_custom_css, BG, TX, sax
-
-# Matplotlib 한글 폰트 설정
-plt.rcParams["axes.unicode_minus"] = False
-for f in ["AppleGothic", "NanumGothic", "Malgun Gothic"]:
-    try:
-        rc("font", family=f)
-        break
-    except:
-        continue
 
 
 @st.cache_data

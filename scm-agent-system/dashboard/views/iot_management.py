@@ -13,7 +13,7 @@ def render_iot_management():
         return
 
     inject_custom_css()
-    st.markdown(f'<div class="hdr"><div><div class="hdr-t">📟 IoT 센서 모니터링 (REST 연동)</div><div class="hdr-s">물류 창고 실시간 IoT 센서 디바이스 등록 및 활성 상태 중앙 관리 통제탑</div></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="hdr"><div><div class="hdr-t">IoT 센서 모니터링 (REST 연동)</div><div class="hdr-s">물류 창고 실시간 IoT 센서 디바이스 등록 및 활성 상태 중앙 관리 통제탑</div></div></div>', unsafe_allow_html=True)
 
     # 2. 지역 정보 가져오기 (디바이스 등록 시 매핑할 지역 목록)
     regions = auth_helper.api_get("/api/regions") or []
@@ -22,7 +22,7 @@ def render_iot_management():
     col_list, col_reg = st.columns([2, 1])
 
     with col_reg:
-        st.markdown('<div class="sec">➕ 신규 IoT 디바이스 등록</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">신규 IoT 디바이스 등록</div>', unsafe_allow_html=True)
         with st.form("register_device_form"):
             dev_id = st.text_input("디바이스 ID (예: SENS-TEMP-001)", placeholder="SENS-TEMP-xxx")
             
@@ -55,13 +55,13 @@ def render_iot_management():
                         st.rerun()
 
     with col_list:
-        st.markdown('<div class="sec">📡 IoT 센서 상태 목록</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">IoT 센서 상태 목록</div>', unsafe_allow_html=True)
         
         # 3. 디바이스 목록 가져오기
         devices = auth_helper.api_get("/api/iot/devices")
         
         if not devices:
-            st.info("💡 등록된 IoT 센서 디바이스가 없습니다. 우측 폼을 이용해 첫 디바이스를 등록하세요.")
+            st.info("등록된 IoT 센서 디바이스가 없습니다. 우측 폼을 이용해 첫 디바이스를 등록하세요.")
         else:
             # Table visualization
             df_data = []
@@ -76,7 +76,7 @@ def render_iot_management():
             df = pd.DataFrame(df_data)
             st.dataframe(df, use_container_width=True)
 
-            st.markdown('<div class="sec" style="margin-top: 20px;">⚙️ 장비 상태 원격 토글</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sec" style="margin-top: 20px;">장비 상태 원격 토글</div>', unsafe_allow_html=True)
             
             # Show individual devices with toggles
             for dev in devices:

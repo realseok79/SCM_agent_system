@@ -7,21 +7,21 @@ from components.styles import inject_custom_css, BG, TX, sax
 
 def render_ai_learning_dashboard():
     inject_custom_css()
-    st.markdown('<div class="hdr"><div><div class="hdr-t">🔄 매핑 품질 모니터링 및 피드백 추이</div><div class="hdr-s">사용자 피드백 기반 엑셀 매핑 규칙의 신뢰도 실시간 감쇠 및 정합성 제어 추이</div></div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hdr"><div><div class="hdr-t">매핑 품질 모니터링 및 피드백 추이</div><div class="hdr-s">사용자 피드백 기반 엑셀 매핑 규칙의 신뢰도 실시간 감쇠 및 정합성 제어 추이</div></div></div>', unsafe_allow_html=True)
 
     # 1. API 데이터 호출 (기본 companyId: SIGMA)
     company_id = "SIGMA"
     history = auth_helper.api_get(f"/api/feedback/history/{company_id}")
     
     if not history:
-        st.info("ℹ️ **아직 수집된 컬럼 매핑 피드백 데이터가 없습니다.**")
+        st.info("**아직 수집된 컬럼 매핑 피드백 데이터가 없습니다.**")
         
-        st.markdown("### 📋 엑셀 자동 매핑 및 피드백 제어 안내")
+        st.markdown("### 엑셀 자동 매핑 및 피드백 제어 안내")
         st.write("본 화면은 엑셀 파일을 업로드할 때 표준 항목 이름과 다른 컬럼명을 사용자가 직접 교정(반려)한 이력을 시각화합니다. 사용자의 피드백을 반영하여 자동 매칭 규칙의 정밀도가 실시간으로 보정됩니다.")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("#### ⚙️ 작동 프로세스")
+            st.markdown("#### 작동 프로세스")
             st.markdown("""
             - **유사도 매칭**: 엑셀 업로드 시 열 이름의 유사도를 분석하여 가장 알맞은 표준 컬럼에 자동으로 연결합니다.
             - **피드백 보정**: 자동 매칭 결과에 오류가 있어 사용자가 **[반려]**하면, 해당 매핑의 내부 신뢰도 점수를 즉시 낮춥니다.
@@ -29,7 +29,7 @@ def render_ai_learning_dashboard():
             """)
             
         with col2:
-            st.markdown("#### 🛠️ 화면 활성화 방법")
+            st.markdown("#### 화면 활성화 방법")
             st.markdown("""
             1. **[지역별 SCM 관제 센터]** 메뉴로 이동합니다.
             2. 엑셀 업로드 창에 테스트용 엑셀 파일을 업로드합니다. (업로드 즉시 자동 분석이 시작됩니다.)
@@ -37,7 +37,7 @@ def render_ai_learning_dashboard():
             4. 반려 완료 후 이 페이지로 돌아오면 실시간 신뢰도 감쇠 추이 그래프가 나타납니다.
             """)
             
-        st.info("💡 **가이드**: 왼쪽 메뉴의 **[지역별 SCM 관제 센터]**로 이동하여 분석용 엑셀 파일 업로드를 먼저 진행해 주세요.")
+        st.info("**가이드**: 왼쪽 메뉴의 **[지역별 SCM 관제 센터]**로 이동하여 분석용 엑셀 파일 업로드를 먼저 진행해 주세요.")
         return
 
     # Pandas DataFrame으로 변환
@@ -47,7 +47,7 @@ def render_ai_learning_dashboard():
     col1, col2 = st.columns([1.5, 1])
     
     with col1:
-        st.markdown('<div class="sec">📊 매핑별 현재 실효 신뢰도 비교 (Effective Confidence)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">매핑별 현재 실효 신뢰도 비교 (Effective Confidence)</div>', unsafe_allow_html=True)
         
         # Plotly Bar Chart로 신뢰도 시각화
         fig = go.Figure()
@@ -101,7 +101,7 @@ def render_ai_learning_dashboard():
         st.plotly_chart(fig, use_container_width=True)
         
     with col2:
-        st.markdown('<div class="sec">⚙️ 지수 감쇠 피드백 수식 (Math Model)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">지수 감쇠 피드백 수식 (Math Model)</div>', unsafe_allow_html=True)
         st.markdown(r"""
         본 시스템은 사용자의 반려 피드백이 발생할 때마다 해당 매핑의 **Negative Score**를 감산 가중치로 누적합니다.
         
@@ -116,7 +116,7 @@ def render_ai_learning_dashboard():
         $$C_{eff} = \max(0.0, C_{orig} - 0.15 \times S_t)$$
         """, unsafe_allow_html=True)
         
-        st.markdown('<div class="sec">💡 피드백 모니터링 인사이트</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">피드백 모니터링 인사이트</div>', unsafe_allow_html=True)
         warnings = df[df['effectiveConfidence'] < 0.3]
         if not warnings.empty:
             for _, row in warnings.iterrows():
@@ -124,7 +124,7 @@ def render_ai_learning_dashboard():
         else:
             st.success("✅ 모든 활성 매핑의 실효 신뢰도가 임계치(0.3) 이상으로 안정적으로 제어되고 있습니다.")
 
-    st.markdown('<div class="sec">📈 특정 매핑의 피드백 학습 시계열 적응 곡선 (Dynamic Time-Series Curve)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec">특정 매핑의 피드백 학습 시계열 적응 곡선 (Dynamic Time-Series Curve)</div>', unsafe_allow_html=True)
     
     # 사용자가 시계열을 관찰할 매핑 컬럼 선택
     mapping_options = df['rawHeader'] + " ➔ " + df['mappedColumn']
@@ -201,7 +201,7 @@ def render_ai_learning_dashboard():
     st.plotly_chart(time_fig, use_container_width=True)
 
     # 상세 정보 테이블
-    st.markdown('<div class="sec">📋 매핑 상태 원시 데이터 테이블</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec">매핑 상태 원시 데이터 테이블</div>', unsafe_allow_html=True)
     st.dataframe(df[['rawHeader', 'mappedColumn', 'confidence', 'negativeScore', 'effectiveConfidence', 'updatedAt']].rename(columns={
         'rawHeader': '원문 헤더',
         'mappedColumn': '매핑 컬럼',

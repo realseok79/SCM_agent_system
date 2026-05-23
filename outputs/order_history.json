@@ -1,0 +1,138 @@
+[
+  {
+    "order_id": "ORD-DAY001-221206",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "초기 상태 절대 상한 통과"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-221606",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "초기 상태 절대 상한 통과"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-014313",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "초기 상태 절대 상한 통과"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-014702",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "초기 상태 절대 상한 통과"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-014838",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "초기 상태 절대 상한 통과"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-015641",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "모든 가드레일 제어 조건 만족"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-020045",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "모든 가드레일 제어 조건 만족"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-DAY001-020249",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "모든 가드레일 제어 조건 만족"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  }
+]

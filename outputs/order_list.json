@@ -1,0 +1,37 @@
+[
+  {
+    "order_id": "ORD-DAY001-020249",
+    "timestamp": "2026-01-01T00:00:00",
+    "day": 1,
+    "order_qty": 300.0,
+    "status": "APPROVED",
+    "guardrail_info": {
+      "status": "APPROVED",
+      "reason": "모든 가드레일 제어 조건 만족"
+    },
+    "trigger": {
+      "reorder_point": 150.0,
+      "safety_stock": 100.0,
+      "alert_level": "WARNING"
+    },
+    "note": "자동 발주 집행"
+  },
+  {
+    "order_id": "ORD-FRICT-20260523020249",
+    "timestamp": "2026-05-23T02:02:49.499871",
+    "item_name": "Test SKU",
+    "order_qty": 250.0,
+    "category": "TECH_AND_SEMICONDUCTOR",
+    "status": "APPROVED",
+    "reason": "안전 검증 통과 (원요청 250.0개 중 0.0개 간선 이동 대체 후 250.0개 최종 발주)"
+  },
+  {
+    "order_id": "ORD-FRICT-20260523020249",
+    "timestamp": "2026-05-23T02:02:49.503618",
+    "item_name": "Test SKU",
+    "order_qty": 250.0,
+    "category": "TECH_AND_SEMICONDUCTOR",
+    "status": "APPROVED",
+    "reason": "안전 검증 통과 (원요청 250.0개 중 0.0개 간선 이동 대체 후 250.0개 최종 발주)"
+  }
+]

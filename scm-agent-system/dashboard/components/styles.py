@@ -1,14 +1,27 @@
-# dashboard/components/styles.py
 import streamlit as st
+import matplotlib as mpl
+import matplotlib.font_manager as fm
 
-BG = '#0a192f'
-TX = '#ccd6f6'
+try:
+    mpl.rcParams['axes.unicode_minus'] = False
+    installed_fonts = {f.name for f in fm.fontManager.ttflist}
+    korean_fonts = ['NanumGothic', 'NanumBarunGothic', 'AppleGothic', 'Malgun Gothic']
+    selected_font = next((font for font in korean_fonts if font in installed_fonts), None)
+    if selected_font:
+        mpl.rcParams['font.family'] = selected_font
+    else:
+        mpl.rcParams['font.family'] = 'sans-serif'
+except Exception:
+    pass
+
+BG = '#0d1117'
+TX = '#c9d1d9'
 
 def sax(ax):
     ax.tick_params(colors=TX, labelsize=7)
     for spine in ax.spines.values():
-        spine.set_color('rgba(255, 255, 255, 0.12)')
-    ax.yaxis.grid(True, color="rgba(255, 255, 255, 0.08)", alpha=0.5, ls=":")
+        spine.set_color('#30363d')
+    ax.yaxis.grid(True, color='#30363d', alpha=0.3, ls=":")
     ax.xaxis.grid(False)
 
 def inject_custom_css():
@@ -22,156 +35,148 @@ html, body, [class*="css"], .stApp {
     font-display: swap;
 }
 
-/* Base App Deep Navy background and default text color */
+/* Base App style with GitHub dark theme canvas */
 .stApp {
-    background: radial-gradient(circle at 50% 50%, #172a45, #0a192f) !important;
-    color: #ccd6f6 !important;
+    background-color: #0d1117 !important;
+    color: #c9d1d9 !important;
 }
 
-/* Streamlit container backgrounds transparent */
+/* Streamlit native block overrides for structural alignment */
 [data-testid="stSidebar"],
 [data-testid="stHeader"],
 [data-testid="stToolbar"],
 [data-testid="stAppViewContainer"] {
-    background-color: transparent !important;
+    background-color: #0d1117 !important;
 }
 
-/* Glassmorphism sidebar styling */
+/* GitHub-style Sidebar layout separation */
 [data-testid="stSidebar"] {
-    background: rgba(10, 25, 47, 0.6) !important;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background-color: #0d1117 !important;
+    border-right: 1px solid #30363d !important;
+    padding-top: 2rem !important;
 }
 
 .block-container, 
 [data-testid="stMainBlockContainer"], 
 [data-testid="stAppViewBlockContainer"] {
-    padding: 0 1.5rem 0 1.5rem !important;
+    padding: 0 2rem 0 2rem !important;
     max-width: 98% !important;
     width: 98% !important;
 }
 
-/* Glassmorphism Header */
+/* GitHub Premium Header section */
 .hdr {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 20px 24px;
-    margin: 0 -1.5rem 1rem !important;
-    border-radius: 0 0 16px 16px;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    background: #161b22 !important;
+    border-bottom: 1px solid #30363d !important;
+    padding: 24px 32px !important;
+    margin: 0 -2rem 1.5rem !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
 }
 .hdr-t {
-    font-size: 20px;
-    font-weight: 700;
-    color: #64ffda;
-    letter-spacing: -0.02em;
-    text-shadow: 0 0 10px rgba(100, 255, 218, 0.2);
+    font-size: 22px !important;
+    font-weight: 600 !important;
+    color: #f0f6fc !important;
+    letter-spacing: -0.01em;
 }
 .hdr-s {
-    font-size: 12px;
-    color: #8892b0;
-    margin-top: 4px;
+    font-size: 13px !important;
+    color: #8b949e !important;
+    margin-top: 6px !important;
 }
 
-/* Section Header */
+/* Structured Section Header */
 .sec {
-    font-size: 12px;
-    font-weight: 600;
-    color: #64ffda;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 6px;
-    margin: 1.2rem 0 0.6rem;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    color: #c9d1d9 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    border-bottom: 1px solid #30363d !important;
+    padding-bottom: 8px !important;
+    margin: 1.6rem 0 1rem !important;
 }
 
-/* Glassmorphism Grid and Cards */
+/* KPI Card Grid and GitHub Cards */
 .kg {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
-    margin-bottom: 0.6rem;
+    gap: 12px;
+    margin-bottom: 1rem;
 }
 .kc {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 12px 16px;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    background: #161b22 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
+    padding: 16px !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    box-shadow: none !important;
 }
 .kc:hover {
-    border-color: rgba(100, 255, 218, 0.4);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(100, 255, 218, 0.15);
+    border-color: #58a6ff !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
 .kl {
-    font-size: 9.5px;
-    color: #8892b0;
+    font-size: 10px !important;
+    color: #8b949e !important;
     text-transform: uppercase;
     letter-spacing: .05em;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
 }
 .kv {
-    font-size: 24px;
-    font-weight: 600;
-    color: #ccd6f6;
-    line-height: 1.1;
+    font-size: 22px !important;
+    font-weight: 600 !important;
+    color: #f0f6fc !important;
+    line-height: 1.2;
 }
-.kv.b { color: #64ffda; }
-.kv.g { color: #00e5a0; }
-.kv.y { color: #ffc107; }
-.kv.r { color: #ff5c5c; }
+.kv.b { color: #58a6ff !important; }
+.kv.g { color: #3fb950 !important; }
+.kv.y { color: #d29922 !important; }
+.kv.r { color: #f85149 !important; }
 
 .ku {
-    font-size: 9.5px;
-    color: #8892b0;
-    margin-top: 4px;
+    font-size: 10px !important;
+    color: #8b949e !important;
+    margin-top: 6px;
 }
 .kb {
     display: inline-block;
-    font-size: 9px;
-    font-weight: 500;
-    border-radius: 4px;
-    padding: 2px 6px;
-    margin-top: 6px;
-    border: 1px solid;
+    font-size: 10px !important;
+    font-weight: 500 !important;
+    border-radius: 4px !important;
+    padding: 2px 8px !important;
+    margin-top: 8px !important;
+    border: 1px solid !important;
 }
 .kb.ok {
-    background: rgba(0, 229, 160, 0.1);
-    color: #00e5a0;
-    border-color: rgba(0, 229, 160, 0.3);
+    background: rgba(56, 139, 253, 0.1) !important;
+    color: #58a6ff !important;
+    border-color: rgba(56, 139, 253, 0.4) !important;
 }
 .kb.w {
-    background: rgba(255, 92, 92, 0.1);
-    color: #ff5c5c;
-    border-color: rgba(255, 92, 92, 0.3);
+    background: rgba(248, 81, 73, 0.1) !important;
+    color: #f85149 !important;
+    border-color: rgba(248, 81, 73, 0.4) !important;
 }
 
+/* Structured Functional Area Card Containers */
 .cc {
-    background: rgba(255, 255, 255, 0.02);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 8px;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
+    background: #161b22 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
+    padding: 20px !important;
+    margin-bottom: 12px !important;
+    box-shadow: none !important;
+    transition: border-color 0.2s ease !important;
 }
 .cc:hover {
-    border-color: rgba(255, 255, 255, 0.15);
+    border-color: #30363d !important;
 }
 .ct {
-    font-size: 12px;
-    font-weight: 600;
-    color: #ccd6f6;
-    margin-bottom: 8px;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: #f0f6fc !important;
+    margin-bottom: 12px !important;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -183,89 +188,157 @@ html, body, [class*="css"], .stApp {
     display: inline-block;
 }
 
-/* Glassmorphism Table */
+/* Premium Structured Table (GitHub Dark-styled) */
 .gt {
-    background: rgba(255, 255, 255, 0.02);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
+    background: #161b22 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
     overflow: hidden;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     width: 100%;
 }
 .gt table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: 13px;
 }
 .gt th {
-    background: rgba(255, 255, 255, 0.04);
-    color: #8892b0;
+    background: #161b22 !important;
+    color: #8b949e !important;
     font-weight: 600;
-    font-size: 10px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: .05em;
-    padding: 8px 12px;
+    padding: 10px 14px;
     text-align: left;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid #30363d !important;
 }
 .gt td {
-    padding: 8px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    color: #ccd6f6;
+    padding: 10px 14px;
+    border-bottom: 1px solid #21262d !important;
+    color: #c9d1d9 !important;
 }
 
+/* Status block indicators */
 .ep {
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 8px;
-    border-left: 4px solid;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-radius: 6px !important;
+    padding: 14px 18px !important;
+    margin-bottom: 12px !important;
+    border: 1px solid #30363d !important;
+    border-left: 4px solid !important;
+    box-shadow: none !important;
 }
 .ec {
-    background: rgba(255, 92, 92, 0.04);
-    border-color: #ff5c5c;
+    background: rgba(248, 81, 73, 0.05) !important;
+    border-left-color: #f85149 !important;
 }
 .ew {
-    background: rgba(255, 193, 7, 0.04);
-    border-color: #ffc107;
+    background: rgba(210, 153, 34, 0.05) !important;
+    border-left-color: #d29922 !important;
 }
 .en {
-    background: rgba(0, 229, 160, 0.04);
-    border-color: #00e5a0;
+    background: rgba(63, 185, 80, 0.05) !important;
+    border-left-color: #3fb950 !important;
 }
 .et {
-    font-size: 12.5px;
-    font-weight: 600;
-    margin-bottom: 4px;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    margin-bottom: 6px !important;
 }
 .eb {
-    font-size: 11.5px;
-    color: #8892b0;
-    line-height: 1.6;
+    font-size: 12px !important;
+    color: #8b949e !important;
+    line-height: 1.6 !important;
 }
 
-/* Custom styles for Streamlit widgets to fit Glassmorphism */
-div[data-baseweb="select"] {
-    background-color: rgba(255, 255, 255, 0.02) !important;
-    border-radius: 8px !important;
+/* Premium Sidebar Menu Navigation */
+div[data-testid="stRadio"] > label {
+    display: none !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 0;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] label {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    padding: 6px 12px !important;
+    border-radius: 6px !important;
+    color: #8b949e !important;
+    cursor: pointer;
+    transition: all 0.15s ease !important;
+    display: flex;
+    align-items: center;
+    font-size: 13.5px !important;
+    font-weight: 500 !important;
+}
+/* Hide standard Streamlit radio UI indicators */
+div[data-testid="stRadio"] div[role="radiogroup"] label [data-testid="stWidgetSelectedBorder"],
+div[data-testid="stRadio"] div[role="radiogroup"] label [data-testid="stWidgetUnselectedBorder"],
+div[data-testid="stRadio"] div[role="radiogroup"] label input[type="radio"] {
+    display: none !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+    background: #161b22 !important;
+    color: #c9d1d9 !important;
+    border-color: #30363d !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] label:has(input[checked]) {
+    background: #21262d !important;
+    color: #ffffff !important;
+    border: 1px solid #30363d !important;
+    border-left: 3px solid #58a6ff !important;
+    border-radius: 3px 6px 6px 3px !important;
+    font-weight: 600 !important;
+}
+
+/* Premium UI Controls Form Inputs */
+div[data-baseweb="select"],
+div[data-baseweb="input"],
+div[data-baseweb="textarea"] {
+    background-color: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
 }
 div[role="listbox"] {
-    background-color: #0a192f !important;
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    background-color: #161b22 !important;
+    border: 1px solid #30363d !important;
 }
+/* Primary button (GitHub-style active green) */
 button[kind="primary"] {
-    background-color: #64ffda !important;
-    color: #0a192f !important;
-    font-weight: 600 !important;
-    border: none !important;
+    background-color: #238636 !important;
+    color: #ffffff !important;
+    font-weight: 500 !important;
+    border: 1px solid #2ea44f !important;
+    border-radius: 6px !important;
+    padding: 6px 16px !important;
+    transition: background-color 0.2s ease !important;
 }
+button[kind="primary"]:hover {
+    background-color: #2ea44f !important;
+    border-color: #3fb950 !important;
+}
+/* Secondary button (GitHub-style flat grey button) */
 button[kind="secondary"] {
-    background-color: rgba(255, 255, 255, 0.04) !important;
-    color: #ccd6f6 !important;
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    background-color: #21262d !important;
+    color: #c9d1d9 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 6px !important;
+    padding: 6px 16px !important;
+    transition: all 0.2s ease !important;
+}
+button[kind="secondary"]:hover {
+    background-color: #30363d !important;
+    border-color: #8b949e !important;
 }
 </style>
+<meta name="google" content="notranslate">
+<script>
+    // React/Streamlit Google Translate DOM Reconciliation Conflict Prevention
+    document.documentElement.setAttribute('translate', 'no');
+    document.documentElement.classList.add('notranslate');
+</script>
 """, unsafe_allow_html=True)
 

@@ -7,3 +7,7 @@ yfinance
 fredapi
 requests
 python-dotenv
+google-genai
+openpyxl
+python-multipart
+

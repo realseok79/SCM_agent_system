@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Python 의존성
 COPY scm-agent-system/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
 
 # 소스 코드 복사
@@ -20,4 +21,6 @@ WORKDIR /app/scm-agent-system
 EXPOSE 8501
 CMD ["python", "-m", "streamlit", "run", "dashboard/app.py", \
      "--server.port=8501", "--server.address=0.0.0.0", \
-     "--server.headless=true"]
+     "--server.headless=true", \
+     "--server.enableCORS=false", \
+     "--server.enableXsrfProtection=false"]

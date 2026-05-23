@@ -7,12 +7,12 @@ from components.styles import inject_custom_css
 
 def render_audit_log_dashboard():
     inject_custom_css()
-    st.markdown(f'<div class="hdr"><div><div class="hdr-t">📋 시스템 감사 로그 (Audit Logs)</div><div class="hdr-s">SCM 시스템의 모든 주요 상태 변화, 자동 재배정 주문 승인/반려 및 장비 작동 기록을 추적합니다.</div></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="hdr"><div><div class="hdr-t">시스템 감사 로그 (Audit Logs)</div><div class="hdr-s">SCM 시스템의 모든 주요 상태 변화, 자동 재배정 주문 승인/반려 및 장비 작동 기록을 추적합니다.</div></div></div>', unsafe_allow_html=True)
 
     # Fetch logs
     logs = auth_helper.api_get("/api/audit-logs")
     if not logs:
-        st.info("💡 기록된 감사 로그가 존재하지 않습니다.")
+        st.info("기록된 감사 로그가 존재하지 않습니다.")
         return
 
     # Filter section
@@ -54,7 +54,7 @@ def render_audit_log_dashboard():
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     # Detailed card view
-    st.markdown('<div class="sec" style="margin-top: 20px;">🔍 로그 세부 타임라인</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec" style="margin-top: 20px;">로그 세부 타임라인</div>', unsafe_allow_html=True)
     
     for l in filtered_logs[:15]:
         etype = l.get("eventType")
@@ -62,7 +62,7 @@ def render_audit_log_dashboard():
         tby = l.get("triggeredBy")
         time_str = l.get("recordedAt", "").replace("T", " ")[:19]
         
-        prefix = "ℹ️"
+        prefix = ""
         bg_col = "#2d37480a"
         border_col = "#4a5568"
         
@@ -91,7 +91,7 @@ def render_audit_log_dashboard():
         <div style="border-left: 4px solid {border_col}; background-color: {bg_col}; padding: 10px 14px; margin-bottom: 8px; border-radius: 4px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: bold; color: #f7fafc;">{prefix} {etype}</span>
-                <span style="font-size: 11px; color: #a0aec0;">🕒 {time_str} | 👤 {tby}</span>
+                <span style="font-size: 11px; color: #a0aec0;">{time_str} | {tby}</span>
             </div>
             <div style="font-size: 13px; margin-top: 4px; color: #cbd5e0;">{msg}</div>
         </div>

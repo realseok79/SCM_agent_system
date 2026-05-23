@@ -180,18 +180,45 @@ Return the result structured as a JSON object adhering to the schema.
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}. Falling back to default heuristics.")
         # Fallback manual heuristics
-        mapping_res = MappingResponse(
-            sheet_mappings=[
+        sheet_mappings = []
+        for name, df in sheets_data.items():
+            cols = list(df.columns)
+            
+            # region_code: look for region keywords
+            region_col = next((c for c in cols if any(kw in c.lower() for kw in ['창고', '지역', '지점', '센터', 'region'])), None)
+            if not region_col:
+                region_col = next((c for c in cols if any(kw in c.lower() for kw in ['출발', '도착', 'origin', 'dest'])), None)
+            
+            # product_name: prefer '명/이름' columns and avoid '코드/id' columns for product matching
+            prod_cols = [c for c in cols if any(kw in c.lower() for kw in ['상품', '제품', '품목', '물품', '자재', 'product'])]
+            product_col = None
+            if prod_cols:
+                product_col = next((c for c in prod_cols if any(kw in c.lower() for kw in ['명', '이름', 'name'])), None)
+                if not product_col:
+                    product_col = next((c for c in prod_cols if not any(kw in c.lower() for kw in ['코드', 'code', 'id', 'key'])), None)
+                if not product_col:
+                    product_col = prod_cols[0]
+            
+            # date
+            date_col = next((c for c in cols if any(kw in c.lower() for kw in ['날짜', '일자', '일', 'date'])), None)
+            
+            # quantity
+            qty_col = next((c for c in cols if any(kw in c.lower() for kw in ['수량', '개수', '재고', 'qty', 'quantity'])), None)
+
+            sheet_mappings.append(
                 SheetMapping(
                     sheet_name=name,
                     mapping=ColumnMapping(
-                        region_code=next((c for c in df.columns if any(kw in c.lower() for kw in ['창고', '지역', '지점', '센터', 'region'])), None),
-                        product_name=next((c for c in df.columns if any(kw in c.lower() for kw in ['상품', '제품', '품목', '물품', '자재', 'product'])), None),
-                        date=next((c for c in df.columns if any(kw in c.lower() for kw in ['날짜', '일자', '일', 'date'])), None),
-                        quantity=next((c for c in df.columns if any(kw in c.lower() for kw in ['수량', '개수', '재고', 'qty', 'quantity'])), None)
+                        region_code=region_col,
+                        product_name=product_col,
+                        date=date_col,
+                        quantity=qty_col
                     )
-                ) for name, df in sheets_data.items()
-            ],
+                )
+            )
+
+        mapping_res = MappingResponse(
+            sheet_mappings=sheet_mappings,
             explanation="Fallback manual mapping due to LLM error."
         )
 
@@ -232,12 +259,39 @@ def clean_excel_data(file_bytes: bytes, user_mapping: Dict[str, str]) -> pd.Data
         rename_dict = {}
         cols_to_keep = []
         
-        for raw_col, std_col in user_mapping.items():
-            if std_col and std_col in ["region_code", "product_name", "date", "quantity"]:
-                if raw_col in df.columns:
-                    rename_dict[raw_col] = std_col
-                    cols_to_keep.append(raw_col)
-                    
+        # Enforce that each std column is mapped at most once in this sheet
+        for std_col in ["region_code", "product_name", "date", "quantity"]:
+            # Find all raw columns in this sheet that are mapped to std_col
+            candidates = [raw for raw, std in user_mapping.items() if std == std_col and raw in df.columns]
+            if not candidates:
+                continue
+                
+            # If multiple candidates exist in the same sheet, pick the best one
+            if len(candidates) > 1:
+                if std_col == "product_name":
+                    best = next((c for c in candidates if any(kw in c.lower() for kw in ['명', '이름', 'name'])), None)
+                    if not best:
+                        best = next((c for c in candidates if not any(kw in c.lower() for kw in ['코드', 'code', 'id', 'key'])), None)
+                    chosen = best if best else candidates[0]
+                elif std_col == "region_code":
+                    best = next((c for c in candidates if any(kw in c.lower() for kw in ['창고', '지역', '지점', '센터', 'region'])), None)
+                    if not best:
+                        best = next((c for c in candidates if not any(kw in c.lower() for kw in ['코드', 'code', 'id', 'key'])), None)
+                    chosen = best if best else candidates[0]
+                elif std_col == "date":
+                    best = next((c for c in candidates if any(kw in c.lower() for kw in ['날짜', '일자', 'date'])), None)
+                    chosen = best if best else candidates[0]
+                elif std_col == "quantity":
+                    best = next((c for c in candidates if any(kw in c.lower() for kw in ['수량', 'qty', 'quantity'])), None)
+                    chosen = best if best else candidates[0]
+                else:
+                    chosen = candidates[0]
+            else:
+                chosen = candidates[0]
+                
+            rename_dict[chosen] = std_col
+            cols_to_keep.append(chosen)
+            
         if not cols_to_keep:
             continue
             

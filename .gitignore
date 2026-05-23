@@ -11,6 +11,7 @@ Thumbs.db
 *.suo
 *.user
 *.sln.docstates
+node_modules/
 
 # --- Virtual Environments (Python) ---
 myenv/

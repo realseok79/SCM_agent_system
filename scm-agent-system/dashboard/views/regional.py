@@ -4,7 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import requests
 import auth_helper
+import os
 from components.styles import inject_custom_css, BG, TX, sax
+
+ANALYSIS_SERVICE_URL = os.getenv("ANALYSIS_SERVICE_URL", "http://localhost:8090")
 
 def render_regional_dashboard():
     inject_custom_css()
@@ -13,7 +16,7 @@ def render_regional_dashboard():
     # 지역 조회
     regions_res = auth_helper.api_get("/api/regions")
     if regions_res is None:
-        st.warning("⚠️ 지역 정보를 읽어오지 못했습니다. (네트워크 상태 확인 필요)")
+        st.warning("지역 정보를 읽어오지 못했습니다. (네트워크 상태 확인 필요)")
         regions = []
     else:
         regions = regions_res
@@ -29,10 +32,10 @@ def render_regional_dashboard():
         region_options = {f"{r['regionName']} ({r['regionCode']})": r for r in regions} if regions else {}
         
         if user_role == "ROLE_EXECUTIVE":
-            st.info("🔒 경영진 계정은 거점 등록/삭제 권한이 없습니다.")
+            st.info("경영진 계정은 거점 등록/삭제 권한이 없습니다.")
         else:
             # 신규 지역 등록
-            with st.expander("➕ 신규 지역 등록", expanded=False):
+            with st.expander("신규 지역 등록", expanded=False):
                 with st.form("new_region_form"):
                     new_name = st.text_input("지역명 (예: 서울, 부산, 경기, 제주 등)")
                     new_desc = st.text_input("설명 (예: 수도권 메인 기지)")
@@ -55,7 +58,7 @@ def render_regional_dashboard():
                                 st.error("지역 등록 실패")
 
             # 등록 지역 삭제
-            with st.expander("❌ 등록 지역 삭제", expanded=False):
+            with st.expander("등록 지역 삭제", expanded=False):
                 if not regions:
                     st.info("삭제할 수 있는 지역이 없습니다.")
                 else:
@@ -97,6 +100,8 @@ def render_regional_dashboard():
                 key="selected_region_name"
             )
             selected_region = region_options[selected_key]
+            st.session_state["active_region_code"] = selected_region['regionCode']
+            st.session_state["active_region_name"] = selected_region['regionName']
 
             st.markdown(f"""
             <div class="kc" style="margin-bottom: 10px;">
@@ -106,21 +111,21 @@ def render_regional_dashboard():
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.info("💡 등록된 지역이 없습니다. 아래에서 SCM 엑셀/CSV 파일을 업로드하면 자동으로 지역이 등록됩니다.")
+            st.info("등록된 지역이 없습니다. 아래에서 SCM 엑셀/CSV 파일을 업로드하면 자동으로 지역이 등록됩니다.")
 
         # 데이터 업로드
         st.markdown('<div class="sec">SCM 엑셀/CSV 데이터 업로드</div>', unsafe_allow_html=True)
         if user_role == "ROLE_EXECUTIVE":
-            st.warning("🔒 경영진 계정은 SCM 원천 데이터를 업로드할 권한이 없습니다.")
+            st.warning("경영진 계정은 SCM 원천 데이터를 업로드할 권한이 없습니다.")
         else:
             uploaded_file = st.file_uploader("지역 재고 및 수요 이력 업로드", type=["csv", "xlsx", "xls"], key="regional_uploader")
             
             if uploaded_file is not None:
                 if "analyze_result" not in st.session_state or st.session_state.get("analyze_file_name") != uploaded_file.name:
-                    with st.spinner("⚡ AI (Gemini 3.1 Flash-Lite)가 엑셀의 시트와 헤더 시작점을 지능적으로 탐색하는 중입니다..."):
+                    with st.spinner("AI가 엑셀의 시트와 헤더 시작점을 지능적으로 탐색하는 중입니다..."):
                         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                         try:
-                            res = requests.post("http://localhost:8090/analyze/excel/llm", files=files, timeout=30)
+                            res = requests.post(f"{ANALYSIS_SERVICE_URL}/analyze/excel/llm", files=files, timeout=30)
                             if res.status_code == 200:
                                 st.session_state["analyze_result"] = res.json()
                                 st.session_state["analyze_file_bytes"] = uploaded_file.getvalue()
@@ -128,9 +133,9 @@ def render_regional_dashboard():
                                 st.session_state["analyze_file_type"] = uploaded_file.type
                                 st.rerun()
                             else:
-                                st.error(f"❌ 데이터 분석 실패: {res.text}")
+                                st.error(f"데이터 분석 실패: {res.text}")
                         except Exception as e:
-                            st.error(f"❌ 분석 서버 연결 실패: {e}")
+                            st.error(f"분석 서버 연결 실패: {e}")
             else:
                 st.session_state.pop("analyze_result", None)
                 st.session_state.pop("analyze_file_bytes", None)
@@ -143,7 +148,7 @@ def render_regional_dashboard():
                 quality = res_json.get("qualityScore", 1.0)
                 mapping = res_json.get("mapping", {})
                 
-                st.markdown("### 🔍 AI 스키마 매핑 및 검증 프리뷰")
+                st.markdown("### AI 스키마 매핑 및 검증 프리뷰")
                 
                 # 지표 렌더링
                 met_col1, met_col2 = st.columns(2)
@@ -151,12 +156,12 @@ def render_regional_dashboard():
                     if drift >= 0.2:
                         st.metric("⚠️ 스키마 드리프트 점수", f"{drift:.3f}", delta="경고: 비표준 헤더", delta_color="inverse")
                     else:
-                        st.metric("✅ 스키마 드리프트 점수", f"{drift:.3f}", delta="정상: 규격 적합")
+                        st.metric("스키마 드리프트 점수", f"{drift:.3f}", delta="정상: 규격 적합")
                 with met_col2:
                     if quality < 0.9:
                         st.metric("⚠️ 데이터 정합성 점수", f"{quality*100:.1f}%", delta="일부 행 경고/오류", delta_color="inverse")
                     else:
-                        st.metric("✅ 데이터 정합성 점수", f"{quality*100:.1f}%", delta="정상 데이터")
+                        st.metric("데이터 정합성 점수", f"{quality*100:.1f}%", delta="정상 데이터")
 
                 # 미매핑 경고
                 unmapped_cols = [k for k, v in mapping.items() if not v]
@@ -164,7 +169,7 @@ def render_regional_dashboard():
                     st.warning(f"🔴 **수동 매핑 필요**: SCM 표준 열에 매핑되지 않은 원본 헤더가 존재합니다: `{', '.join(unmapped_cols)}`")
                 
                 # 데이터 매핑 수동 편집기 (st.data_editor)
-                st.write("📋 **컬럼 매핑 확인 및 조정**")
+                st.write("컬럼 매핑 확인 및 조정")
                 mapping_data = []
                 for raw_col, std_col in mapping.items():
                     mapping_data.append({
@@ -190,7 +195,7 @@ def render_regional_dashboard():
                 )
                 
                 # 데이터 미리보기
-                st.write("📄 **데이터 일부 프리뷰 (최대 10행)**")
+                st.write("데이터 일부 프리뷰 (최대 10행)")
                 preview_df = pd.DataFrame(res_json.get("previewRows", []), columns=res_json.get("columns", []))
                 st.dataframe(preview_df, use_container_width=True)
 
@@ -202,9 +207,9 @@ def render_regional_dashboard():
                 # 승인/반영 단추
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("🚀 AI 매핑 승인 및 최종 반영", use_container_width=True, type="primary"):
+                    if st.button("AI 매핑 승인 및 최종 반영", use_container_width=True, type="primary"):
                         if not has_region_code:
-                            st.error("❌ 지역 코드(region_code) 매핑이 누락되었습니다. 반영을 중단합니다.")
+                            st.error("지역 코드(region_code) 매핑이 누락되었습니다. 반영을 중단합니다.")
                         else:
                             confirmed_mapping = {}
                             for _, r in edited_df.iterrows():
@@ -212,16 +217,16 @@ def render_regional_dashboard():
                                 std = r["표준 SCM 컬럼 매핑"]
                                 confirmed_mapping[raw] = None if std == "미매핑" else std
                             
-                            with st.spinner("⚡ AI 데이터 클렌징 및 최종 재고 반영 중..."):
+                            with st.spinner("AI 데이터 클렌징 및 최종 재고 반영 중..."):
                                 import json
                                 try:
                                     # 1단계: FastAPI를 통한 비정형 데이터 정제 및 병합 (Clean)
                                     clean_files = {"file": (st.session_state["analyze_file_name"], st.session_state["analyze_file_bytes"], st.session_state["analyze_file_type"])}
                                     clean_data = {"user_mapping": json.dumps(confirmed_mapping)}
-                                    clean_res = requests.post("http://localhost:8090/clean/excel", files=clean_files, data=clean_data, timeout=25)
+                                    clean_res = requests.post(f"{ANALYSIS_SERVICE_URL}/clean/excel", files=clean_files, data=clean_data, timeout=25)
                                     
                                     if clean_res.status_code != 200:
-                                        st.error(f"❌ AI 데이터 클렌징 실패: {clean_res.text}")
+                                        st.error(f"AI 데이터 클렌징 실패: {clean_res.text}")
                                     else:
                                         cleaned_csv_str = clean_res.json().get("cleaned_csv", "")
                                         
@@ -262,12 +267,12 @@ def render_regional_dashboard():
                                             st.session_state.pop("analyze_file_type", None)
                                             st.rerun()
                                         else:
-                                            st.error(f"❌ 최종 반영 실패: {confirm_res.text}")
+                                            st.error(f"최종 반영 실패: {confirm_res.text}")
                                 except Exception as e:
-                                    st.error(f"❌ 반영 서버 통신 실패: {e}")
+                                    st.error(f"반영 서버 통신 실패: {e}")
                 
                 with col_btn2:
-                    if st.button("❌ 매핑 작업 취소", use_container_width=True):
+                    if st.button("매핑 작업 취소", use_container_width=True):
                         st.session_state.pop("analyze_result", None)
                         st.session_state.pop("analyze_file_bytes", None)
                         st.session_state.pop("analyze_file_name", None)
@@ -275,19 +280,19 @@ def render_regional_dashboard():
                         st.rerun()
 
             if st.session_state.get("upload_success"):
-                st.success("데이터 업로드 및 최종 반영이 완벽하게 완료되었습니다.")
+                st.success("데이터 업로드 및 최종 반영이 완료되었습니다.")
                 del st.session_state["upload_success"]
 
     with col2:
         st.markdown('<div class="sec">실시간 지역 재고 흐름 & 기상 융합 분석</div>', unsafe_allow_html=True)
 
         if not selected_region:
-            st.info("💡 데이터를 업로드하면 지역이 자동 등록되고 상세 대시보드가 활성화됩니다.")
+            st.info("데이터를 업로드하면 지역이 자동 등록되고 상세 대시보드가 활성화됩니다.")
         else:
             # 1. 해당 지역 재고 데이터 조회
             inv_data = auth_helper.api_get(f"/api/dashboard/region/{selected_region['regionCode']}/inventory")
             if not inv_data:
-                st.info("💡 분석을 진행하기 위해 좌측 패널에서 재고 데이터를 업로드해 주세요.")
+                st.info("분석을 진행하기 위해 좌측 패널에서 재고 데이터를 업로드해 주세요.")
             else:
                 inv_df = pd.DataFrame([
                     {
@@ -314,7 +319,7 @@ def render_regional_dashboard():
                 products = active_products
                 
                 if not products:
-                    st.info("💡 분석할 만한 유효 재고(최신 물량 > 0)를 가진 품목이 없습니다.")
+                    st.info("분석할 만한 유효 재고(최신 물량 > 0)를 가진 품목이 없습니다.")
                 else:
                     total_qty = inv_df[inv_df["product_name"].isin(products)].groupby("product_name")["quantity"].last().sum()
 
@@ -326,31 +331,66 @@ def render_regional_dashboard():
 
                     # 품목 선택 필터
                     selected_prod = st.selectbox("분석할 품목 선택", options=products)
+                    st.session_state["active_product_name"] = selected_prod
                     prod_inv = inv_df[inv_df["product_name"] == selected_prod]
 
                     # 1. 재고 변동 차트 시각화 및 2. 데이터 무결성 검증
                     if prod_inv.empty or prod_inv["quantity"].iloc[-1] <= 0:
-                        st.info(f"💡 [{selected_prod}] 품목은 현재 재고가 없어 차트 및 무결성 분석을 제공하지 않습니다.")
+                        st.info(f"[{selected_prod}] 품목은 현재 재고가 없어 차트 및 무결성 분석을 제공하지 않습니다.")
                     else:
                         st.markdown(f'<div class="cc"><div class="ct"><span class="dt" style="background:#8ab4f8"></span>[{selected_prod}] 일별 재고 변동 추이</div>', unsafe_allow_html=True)
                         
-                        fig, ax = plt.subplots(figsize=(10, 2.5), dpi=100)
-                        fig.patch.set_facecolor(BG)
-                        ax.set_facecolor(BG)
+                        import plotly.graph_objects as go
                         
                         dates_parsed = pd.to_datetime(prod_inv["date"])
                         prod_inv = prod_inv.assign(parsed_date=dates_parsed)
                         prod_inv = prod_inv.sort_values("parsed_date")
                         
-                        ax.plot(prod_inv["parsed_date"], prod_inv["quantity"], color="#8ab4f8", lw=1.6, marker="o", label="재고량")
-                        ax.fill_between(prod_inv["parsed_date"], prod_inv["quantity"], alpha=0.08, color="#8ab4f8")
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=prod_inv["date"],
+                            y=prod_inv["quantity"],
+                            mode="lines+markers+text",
+                            name="재고량",
+                            line=dict(color="#8ab4f8", width=2.5),
+                            marker=dict(color="#c9d1d9", size=6, line=dict(color="#8ab4f8", width=1.5)),
+                            text=[f"{int(y):,}" for y in prod_inv["quantity"]],
+                            textposition="top center",
+                            textfont=dict(color=TX, size=9),
+                            fill="tozeroy",
+                            fillcolor="rgba(138, 180, 248, 0.06)",
+                            hoverinfo="x+y"
+                        ))
                         
-                        sax(ax)
-                        ax.set_xlabel("날짜 (Date)", fontsize=8, color=TX)
-                        ax.set_ylabel("수량 (Units)", fontsize=8, color=TX)
-                        fig.tight_layout(pad=0.5)
-                        st.pyplot(fig, use_container_width=True)
-                        plt.close(fig)
+                        fig.update_layout(
+                            template="plotly_dark",
+                            paper_bgcolor="rgba(0, 0, 0, 0)",
+                            plot_bgcolor="rgba(0, 0, 0, 0)",
+                            font=dict(color=TX, family="Inter, sans-serif"),
+                            margin=dict(l=40, r=20, t=10, b=40),
+                            height=260,
+                            showlegend=False,
+                            xaxis=dict(
+                                gridcolor="rgba(255, 255, 255, 0.06)",
+                                linecolor="rgba(255, 255, 255, 0.12)",
+                                tickfont=dict(color=TX, size=9),
+                                title=dict(text="날짜 (Date)", font=dict(color=TX, size=10))
+                            ),
+                            yaxis=dict(
+                                gridcolor="rgba(255, 255, 255, 0.06)",
+                                linecolor="rgba(255, 255, 255, 0.12)",
+                                tickfont=dict(color=TX, size=9),
+                                title=dict(text="수량 (Units)", font=dict(color=TX, size=10))
+                            )
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # 직관적인 재고 이력 표 추가
+                        st.write("선택 품목 일별 재고 원시 데이터")
+                        raw_table_df = prod_inv[["date", "quantity"]].copy()
+                        raw_table_df.columns = ["날짜", "재고 수량 (Units)"]
+                        st.dataframe(raw_table_df.set_index("날짜"), use_container_width=True)
+                        
                         st.markdown('</div>', unsafe_allow_html=True)
 
                         # 2. 데이터 무결성 검증
