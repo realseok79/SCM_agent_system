@@ -36,7 +36,7 @@ public class GlobalExceptionHandlerTest {
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals("Internal Server Error", response.getBody().get("error"));
-        assertEquals("Simulated Database Timeout Exception", response.getBody().get("message"));
+        assertEquals("An unexpected error occurred. Please contact the administrator.", response.getBody().get("message"));
 
         verify(slackAlertService, times(1)).sendSlackAlert(
                 eq("Unhandled Exception Occurred in Backend"),

@@ -89,8 +89,10 @@ def get_embedding_similarity(s1: str, s2: str) -> float:
         return 1.0
         
     try:
-        from sentence_transformers import SentenceTransformer, util
         import os
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            raise ImportError("Bypass SentenceTransformer in tests to avoid Hugging Face downloads and thread deadlocks")
+        from sentence_transformers import SentenceTransformer, util
         if _model is None:
             # Set cache dir explicitly as requested in the plan
             os.environ["SENTENCE_TRANSFORMERS_HOME"] = os.path.expanduser("~/.cache/torch/sentence_transformers/")

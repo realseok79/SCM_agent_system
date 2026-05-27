@@ -1,13 +1,13 @@
-fastapi
-uvicorn
-numpy
-scipy
-pandas
-yfinance
-fredapi
-requests
-python-dotenv
-google-genai
-openpyxl
-python-multipart
+fastapi==0.136.1
+uvicorn==0.47.0
+numpy==2.4.6
+scipy==1.17.1
+pandas==3.0.3
+yfinance==1.3.0
+fredapi==0.5.2
+requests==2.34.2
+python-dotenv==1.2.2
+google-genai==2.5.0
+openpyxl==3.1.5
+python-multipart==0.0.29
 

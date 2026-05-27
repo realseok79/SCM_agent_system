@@ -98,13 +98,13 @@ html, body, [class*="css"], .stApp {
 }
 
 /* KPI Card Grid and GitHub Cards */
-.kg {
+.kpi-grid, .kg {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 12px;
     margin-bottom: 1rem;
 }
-.kc {
+.kpi-card, .kc {
     background: #161b22 !important;
     border: 1px solid #30363d !important;
     border-radius: 6px !important;
@@ -112,34 +112,34 @@ html, body, [class*="css"], .stApp {
     transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
     box-shadow: none !important;
 }
-.kc:hover {
+.kpi-card:hover, .kc:hover {
     border-color: #58a6ff !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
-.kl {
+.kpi-label, .kl {
     font-size: 10px !important;
     color: #8b949e !important;
     text-transform: uppercase;
     letter-spacing: .05em;
     margin-bottom: 6px;
 }
-.kv {
+.kpi-value, .kv {
     font-size: 22px !important;
     font-weight: 600 !important;
     color: #f0f6fc !important;
     line-height: 1.2;
 }
-.kv.b { color: #58a6ff !important; }
-.kv.g { color: #3fb950 !important; }
-.kv.y { color: #d29922 !important; }
-.kv.r { color: #f85149 !important; }
+.kpi-value--blue, .kv.b { color: #58a6ff !important; }
+.kpi-value--green, .kv.g { color: #3fb950 !important; }
+.kpi-value--yellow, .kv.y { color: #d29922 !important; }
+.kpi-value--red, .kv.r { color: #f85149 !important; }
 
-.ku {
+.kpi-unit, .ku {
     font-size: 10px !important;
     color: #8b949e !important;
     margin-top: 6px;
 }
-.kb {
+.kpi-badge, .kb {
     display: inline-block;
     font-size: 10px !important;
     font-weight: 500 !important;
@@ -148,12 +148,12 @@ html, body, [class*="css"], .stApp {
     margin-top: 8px !important;
     border: 1px solid !important;
 }
-.kb.ok {
+.kpi-badge--ok, .kb.ok {
     background: rgba(56, 139, 253, 0.1) !important;
     color: #58a6ff !important;
     border-color: rgba(56, 139, 253, 0.4) !important;
 }
-.kb.w {
+.kpi-badge--warning, .kb.w {
     background: rgba(248, 81, 73, 0.1) !important;
     color: #f85149 !important;
     border-color: rgba(248, 81, 73, 0.4) !important;
@@ -220,7 +220,7 @@ html, body, [class*="css"], .stApp {
 }
 
 /* Status block indicators */
-.ep {
+.alert-panel, .ep {
     border-radius: 6px !important;
     padding: 14px 18px !important;
     margin-bottom: 12px !important;
@@ -228,24 +228,24 @@ html, body, [class*="css"], .stApp {
     border-left: 4px solid !important;
     box-shadow: none !important;
 }
-.ec {
+.alert-panel--critical, .ec {
     background: rgba(248, 81, 73, 0.05) !important;
     border-left-color: #f85149 !important;
 }
-.ew {
+.alert-panel--warning, .ew {
     background: rgba(210, 153, 34, 0.05) !important;
     border-left-color: #d29922 !important;
 }
-.en {
+.alert-panel--normal, .en {
     background: rgba(63, 185, 80, 0.05) !important;
     border-left-color: #3fb950 !important;
 }
-.et {
+.alert-title, .et {
     font-size: 13px !important;
     font-weight: 600 !important;
     margin-bottom: 6px !important;
 }
-.eb {
+.alert-body, .eb {
     font-size: 12px !important;
     color: #8b949e !important;
     line-height: 1.6 !important;
@@ -332,6 +332,28 @@ button[kind="secondary"] {
 button[kind="secondary"]:hover {
     background-color: #30363d !important;
     border-color: #8b949e !important;
+}
+
+/* Responsive adjustments for mobile/tablet devices */
+@media (max-width: 992px) {
+    .kpi-grid, .kg {
+        grid-template-columns: repeat(3, 1fr) !important;
+    }
+}
+@media (max-width: 768px) {
+    .kpi-grid, .kg {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    .block-container, 
+    [data-testid="stMainBlockContainer"], 
+    [data-testid="stAppViewBlockContainer"] {
+        padding: 0 1rem 0 1rem !important;
+    }
+}
+@media (max-width: 480px) {
+    .kpi-grid, .kg {
+        grid-template-columns: 1fr !important;
+    }
 }
 </style>
 <meta name="google" content="notranslate">

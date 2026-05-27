@@ -9,8 +9,8 @@ from utils.logger import get_logger
 logger = get_logger("BackendSynchronizer")
 
 # Spring Boot 중앙 서버 URL 및 설정
-BACKEND_URL = "http://localhost:8080"
-COMPANY_ID = "COMPANY_SIGMA"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
+COMPANY_ID = os.getenv("COMPANY_ID", "COMPANY_SIGMA")
 
 def sync_simulation_to_backend():
     """

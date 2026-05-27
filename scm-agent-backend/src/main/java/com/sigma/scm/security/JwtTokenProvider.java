@@ -14,11 +14,22 @@ import java.util.Date;
 public class JwtTokenProvider {
 
     private final SecretKey key;
-    private final long accessTokenValidityInMilliseconds = 900000; // 15분
-    private final long refreshTokenValidityInMilliseconds = 604800000; // 7일
+    private final long accessTokenValidityInMilliseconds;
+    private final long refreshTokenValidityInMilliseconds;
 
-    public JwtTokenProvider(@Value("${jwt.secret:defaultSecretKeyForSCMAgentBackendShouldBeLongEnoughAndSecure}") String secret) {
+    public JwtTokenProvider(
+            @Value("${jwt.secret}") String secret,
+            @Value("${jwt.access-token-validity-ms}") long accessTokenValidityMs,
+            @Value("${jwt.refresh-token-validity-ms}") long refreshTokenValidityMs) {
+        if (secret == null || secret.trim().isEmpty()) {
+            throw new IllegalArgumentException("JWT secret key must be configured in environment variables or properties.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalArgumentException("JWT secret key must be at least 32 bytes long.");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.accessTokenValidityInMilliseconds = accessTokenValidityMs;
+        this.refreshTokenValidityInMilliseconds = refreshTokenValidityMs;
     }
 
     public String createAccessToken(Long userId) {

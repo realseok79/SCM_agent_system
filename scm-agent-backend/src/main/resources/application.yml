@@ -27,13 +27,28 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
-# SCM 중앙 비즈니스 가드레일 설정 (agents/config.py 변환)
+# ── JWT 보안 설정 ──
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity-ms: ${JWT_ACCESS_TOKEN_VALIDITY_MS:900000}      # 15분 (기본값)
+  refresh-token-validity-ms: ${JWT_REFRESH_TOKEN_VALIDITY_MS:604800000}  # 7일 (기본값)
+
+# ── SCM 중앙 비즈니스 가드레일 설정 ──
 scm:
   guardrails:
-    max-order-ceiling-ratio: 3.0
-    absolute-max-capacity: 5000.0
+    max-order-ceiling-ratio: ${SCM_GUARDRAILS_MAX_ORDER_CEILING_RATIO:3.0}
+    absolute-max-capacity: ${SCM_GUARDRAILS_ABSOLUTE_MAX_CAPACITY:5000.0}
   simulation:
-    days: 100
-    speed-seconds: 300.0
-  analysis-service-url: http://localhost:8090
+    days: ${SCM_SIMULATION_DAYS:100}
+    speed-seconds: ${SCM_SIMULATION_SPEED_SECONDS:300.0}
+  analysis-service-url: ${SCM_ANALYSIS_SERVICE_URL:http://localhost:8090}
+  ml-serving-url: ${SCM_ML_SERVING_URL:http://localhost:8000}
+  crossdocking:
+    unit-transport-cost: ${SCM_CROSSDOCKING_UNIT_TRANSPORT_COST:5.0}
+    holding-savings-rate: ${SCM_CROSSDOCKING_HOLDING_SAVINGS_RATE:0.05}
+  drift:
+    bins: ${SCM_DRIFT_BINS:10.0,100.0,500.0,2000.0}
 
+# ── CORS 허용 Origin ──
+allowed:
+  origins: ${ALLOWED_ORIGINS:http://localhost:8501,http://127.0.0.1:8501}

@@ -31,7 +31,7 @@ def show():
     # 1. API를 통한 금융 마스터 테이블 정보 수집
     financials = auth_helper.api_get("/api/dashboard/financials")
     if not financials:
-        st.warning("⚠️ 금융 마스터 정보를 수집하지 못했습니다.")
+        st.warning(" 금융 마스터 정보를 수집하지 못했습니다.")
         return
 
     # 사이드바 혹은 좌측 컬럼 제어 패널 구성

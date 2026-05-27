@@ -1,20 +1,20 @@
 # 데이터 처리
-numpy
-pandas
-scipy          # 확률 분포 (poisson, normal)
+numpy==2.4.6
+pandas==3.0.3
+scipy==1.17.1          # 확률 분포 (poisson, normal)
 
 # 에이전트 / API
-flask          # Mock API 서버
-requests       # 에이전트 간 HTTP 통신
+flask==3.0.3          # Mock API 서버
+requests==2.34.2       # 에이전트 간 HTTP 통신
 
 # TDD
-pytest
-pytest-cov     # 커버리지 80% 측정용
+pytest==9.0.3
+pytest-cov==7.1.0     # 커버리지 80% 측정용
 
 # 시각화
-streamlit
-matplotlib
-plotly
+streamlit==1.57.0
+matplotlib==3.10.9
+plotly==6.7.0
 
 # 환경 변수
-python-dotenv
+python-dotenv==1.2.2

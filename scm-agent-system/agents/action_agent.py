@@ -45,6 +45,11 @@ class ActionAgent:
         self._batch_history_30d = np.zeros((30, 30490))
         self._batch_history_count = 0
 
+        # [고도화 A7] 안전재고 및 ROP 갱신 주기 제어를 위한 동적 락 딕셔너리 초기화
+        self._frozen_ss = {}
+        self._frozen_rop = {}
+        self._last_ss_update_day = {}
+
         logger.info("ActionAgent 초기화 완료")
         logger.info(f"  제어 가드레일 (절대) : Max {ABSOLUTE_MAX_CAPACITY} units")
         logger.info(f"  제어 가드레일 (상대) : 30일 이동평균의 {MAX_ORDER_CEILING_RATIO}배")
@@ -101,14 +106,84 @@ class ActionAgent:
             "reason": "모든 가드레일 제어 조건 만족"
         }
 
+    def _select_supplier(self, product_name: str) -> dict:
+        """
+        [고도화 A2] 공급자 등급(Supplier Rating) 기반 최적 발주처 선정 및 리스크 로깅
+        """
+        from db import get_db_connection
+        conn = None
+        best_supplier = {
+            "supplier_code": "UNKNOWN",
+            "supplier_name": "미지정 공급처",
+            "service_rating": "C",
+            "lead_time_days": 7.0
+        }
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT s.supplier_code, s.supplier_name, s.service_rating, l.lead_time_days 
+                FROM suppliers s
+                JOIN lead_time_matrix l ON s.supplier_code = l.supplier_code
+                WHERE l.product_name = ?
+                """,
+                (product_name,)
+            )
+            rows = cursor.fetchall()
+            if rows:
+                rating_scores = {"A": 3, "B": 2, "C": 1}
+                candidates = []
+                for r in rows:
+                    try:
+                        code = r["supplier_code"]
+                        name = r["supplier_name"]
+                        rating = r["service_rating"]
+                        lt = float(r["lead_time_days"])
+                    except (TypeError, KeyError, IndexError):
+                        code = r[0]
+                        name = r[1]
+                        rating = r[2]
+                        lt = float(r[3])
+                    candidates.append({
+                        "supplier_code": code,
+                        "supplier_name": name,
+                        "service_rating": rating,
+                        "lead_time_days": lt
+                    })
+                candidates.sort(key=lambda x: (rating_scores.get(x["service_rating"], 0), -x["lead_time_days"]), reverse=True)
+                best_supplier = candidates[0]
+                if best_supplier["service_rating"] in ("B", "C"):
+                    logger.warning(
+                        f"⚠️ [Supplier Alert] 저등급 공급사 선정 감지! "
+                        f"공급사: {best_supplier['supplier_name']} ({best_supplier['supplier_code']}) | "
+                        f"등급: {best_supplier['service_rating']} | 품목: {product_name}"
+                    )
+        except Exception as e:
+            logger.error(f"Error selecting supplier: {e}")
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        return best_supplier
+
     def _create_order(self, signal: InventorySignalDTO, guardrail: dict) -> dict:
+        product_name = getattr(signal, "product_name", "반도체 칩")
+        supplier_info = self._select_supplier(product_name)
+
         order = {
             "order_id": f"ORD-DAY{signal.day:03d}-{datetime.now().strftime('%H%M%S')}",
             "timestamp": signal.timestamp,
             "day": signal.day,
+            "product_name": product_name,
             "order_qty": signal.optimal_order_qty,
             "status": guardrail["status"],
             "guardrail_info": guardrail,
+            "supplier_code": supplier_info["supplier_code"],
+            "supplier_name": supplier_info["supplier_name"],
+            "supplier_rating": supplier_info["service_rating"],
             "trigger": {
                 "reorder_point": signal.reorder_point,
                 "safety_stock": signal.safety_stock,
@@ -164,10 +239,51 @@ class ActionAgent:
         with open(HISTORY_OUTPUT_PATH, "w", encoding="utf-8") as f:
             json.dump(self._full_history, f, ensure_ascii=False, indent=2)
 
+    def _round_to_lot(self, qty: float, lot_size: float = 50.0) -> float:
+        """
+        [고도화 A3] 발주 수량을 Lot Size 배수로 올림 처리
+        """
+        import math
+        if qty <= 0:
+            return 0.0
+        return float(math.ceil(qty / lot_size) * lot_size)
+
     def execute(self, signal: InventorySignalDTO) -> dict:
         """
         제어 변수(승인된 발주량)를 시뮬레이터로 반환하여 상태 피드백 루프를 완성합니다.
         """
+        # [고도화 A7] 안전재고 및 ROP 갱신 주기 제어 (Freeze Period)
+        ss_update_freq = int(os.getenv("SS_UPDATE_FREQUENCY", 7))
+        product_name = getattr(signal, "product_name", "반도체 칩")
+        
+        # 기본 Lot Size 설정
+        lot_size = 50.0
+        if product_name == "마스크":
+            lot_size = 10.0
+        elif product_name == "종합 품목":
+            lot_size = 50.0
+
+        if (product_name not in self._frozen_ss or 
+            signal.day - self._last_ss_update_day[product_name] >= ss_update_freq):
+            self._frozen_ss[product_name] = signal.safety_stock
+            self._frozen_rop[product_name] = signal.reorder_point
+            self._last_ss_update_day[product_name] = signal.day
+            logger.info(f"❄️ [SS Freeze] ROP/SS 갱신 ({product_name}): SS={signal.safety_stock:.1f}, ROP={signal.reorder_point:.1f} (Day {signal.day})")
+        else:
+            logger.info(f"❄️ [SS Freeze] ROP/SS 고정 유지 ({product_name}): SS={self._frozen_ss[product_name]:.1f}, ROP={self._frozen_rop[product_name]:.1f} (Day {signal.day})")
+            signal.safety_stock = self._frozen_ss[product_name]
+            signal.reorder_point = self._frozen_rop[product_name]
+
+        # 고정된 ROP/SS 기준으로 alert_level 및 발주 여부 재결정
+        current_stock = getattr(signal, "current_stock", None)
+        if current_stock is not None:
+            if current_stock <= signal.safety_stock:
+                signal.alert_level = AlertLevel.CRITICAL
+            elif current_stock <= signal.reorder_point:
+                signal.alert_level = AlertLevel.WARNING
+            else:
+                signal.alert_level = AlertLevel.NORMAL
+
         if signal.alert_level == AlertLevel.NORMAL:
             return {
                 "action": "NO_ORDER",
@@ -176,7 +292,20 @@ class ActionAgent:
                 "reason": f"현재 재고가 ROP({signal.reorder_point:.0f}) 위에서 안정적으로 유지 중"
             }
 
-        guardrail = self._validate_guardrail(signal.optimal_order_qty)
+        # [고도화 A3] Lot Size 기반 발주량 올림
+        qty_to_order = self._round_to_lot(signal.optimal_order_qty, lot_size)
+        if qty_to_order <= 0.0:
+            return {
+                "action": "NO_ORDER",
+                "day": signal.day,
+                "approved_qty": 0.0,
+                "reason": f"발주 수량이 올림 처리 후에도 0입니다."
+            }
+
+        # signal의 optimal_order_qty를 업데이트해서 기록에 정확히 반영되도록 함
+        signal.optimal_order_qty = qty_to_order
+
+        guardrail = self._validate_guardrail(qty_to_order)
         order = self._create_order(signal, guardrail)
 
         report = None
@@ -185,7 +314,7 @@ class ActionAgent:
 
         self._save_history(order)
 
-        approved_qty = signal.optimal_order_qty if guardrail["status"] == "APPROVED" else 0.0
+        approved_qty = qty_to_order if guardrail["status"] == "APPROVED" else 0.0
 
         result = {
             "action": "ORDER_EXECUTED" if guardrail["status"] == "APPROVED" else "ORDER_BLOCKED",

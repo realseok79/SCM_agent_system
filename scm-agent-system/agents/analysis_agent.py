@@ -20,6 +20,12 @@ from datetime import datetime
 from scipy import stats
 from scipy.optimize import minimize_scalar
 from dto.schemas import DataDTO, InventorySignalDTO, AlertLevel, BatchDemandDTO, BatchInventorySignalDTO
+from db import get_db_connection
+from utils.logger import get_logger
+from contextlib import closing
+import threading
+
+logger = get_logger("AnalysisAgent")
 
 
 # ─────────────────────────────────────────────
@@ -405,14 +411,44 @@ class AnalysisAgent:
             clean_demands, clean_lead_times
         )
 
-        # ── Step 5: 안전재고(SS) 및 동적 발주점(ROP) 산출 ──
-        SS = compute_safety_stock(self.z_score, sigma_DL)
-        ROP = compute_rop(E_D, E_L, SS)
-
         # ── Step 6: 비용 파라미터를 DataDTO에서 동적 수신 (하드코딩 제거) ──
         unit_cost = data.unit_holding_cost
         stockout_penalty = data.stockout_penalty
         order_cost = data.order_fixed_cost
+
+        # ── Step 5: SCM ABC 재고 분류 및 동적 안전계수(Z) 적용 ──
+        product_name = "반도체 칩"
+        abc_class = "B"
+        try:
+            with closing(get_db_connection()) as conn:
+                with closing(conn.cursor()) as cursor:
+                    cursor.execute(
+                        "SELECT product_name, abc_class FROM product_financial_master WHERE ABS(holding_cost_per_day - ?) < 0.05",
+                        (unit_cost,)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        try:
+                            product_name = row["product_name"]
+                            abc_class = row["abc_class"]
+                        except (TypeError, KeyError, IndexError):
+                            product_name = row[0]
+                            abc_class = row[1]
+        except Exception as e:
+            logger.error(f"❌ [DB Error] SCM 마스터 정보 조회 실패 ({e})")
+            
+        if abc_class == "A":
+            z_val = 1.65
+            service_lvl = 0.95
+        elif abc_class == "C":
+            z_val = 1.04
+            service_lvl = 0.85
+        else:
+            z_val = 1.28
+            service_lvl = 0.90
+            
+        SS = compute_safety_stock(z_val, sigma_DL)
+        ROP = compute_rop(E_D, E_L, SS)
 
         # ── Step 7: TC 목적함수 최소화로 최적 발주량 Q* 탐색 ──
         optimal_q, min_tc = minimize_total_cost(
@@ -442,8 +478,10 @@ class AnalysisAgent:
             safety_stock=round(SS, 1),
             reorder_point=round(ROP, 1),
             optimal_order_qty=round(order_qty, 1),
-            confidence_level=self.service_level,
-            alert_level=alert_level
+            confidence_level=service_lvl,
+            alert_level=alert_level,
+            current_stock=data.current_stock,
+            product_name=product_name
         )
 
     def analyze_batch(self, batch_data: BatchDemandDTO) -> BatchInventorySignalDTO:

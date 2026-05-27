@@ -7,7 +7,6 @@ import com.sigma.scm.repository.ProductFinancialMasterRepository;
 import com.sigma.scm.repository.RegionInventoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -29,12 +28,18 @@ public class CrossDockingServiceTest {
     @Mock
     private InventoryRebalancingOrderRepository rebalancingOrderRepository;
 
-    @InjectMocks
     private CrossDockingService crossDockingService;
 
     @BeforeEach
     public void setUp() {
         MockitoAnnotations.openMocks(this);
+        crossDockingService = new CrossDockingService(
+                regionInventoryRepository,
+                productFinancialMasterRepository,
+                rebalancingOrderRepository,
+                5.0,   // unitTransportCost (기본값)
+                0.05   // holdingSavingsRate (기본값)
+        );
     }
 
     @Test
@@ -63,7 +68,7 @@ public class CrossDockingServiceTest {
         assertEquals("US", order.getFromRegion());
         assertEquals("GLOBAL_ORDER", order.getToRegion());
         assertEquals(50, order.getTransferQty());
-        assertEquals(25000, order.getSavedCost());
+        assertEquals(1250, order.getSavedCost());
         assertEquals("APPROVED", order.getStatus());
 
         verify(rebalancingOrderRepository, times(1)).save(any(InventoryRebalancingOrder.class));

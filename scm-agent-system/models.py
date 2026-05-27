@@ -181,12 +181,8 @@ def standardize_region(region_input: str) -> tuple[str, str]:
     if cleaned in global_cities:
         return global_cities[cleaned]
         
-    # 그 외 정의되지 않은 신규 글로벌 지역 등록 시 동적 코드 자동 발급 (안정성 확보)
     if len(cleaned) >= 2 and not cleaned.startswith("invalid") and "안드로메다" not in cleaned:
-        import hashlib
-        # 고유한 3자리 해시코드 생성
-        hash_suffix = hashlib.md5(cleaned.encode()).hexdigest()[:3].upper()
-        code = f"GL-{hash_suffix}"
+        code = f"UNKNOWN-{cleaned.upper()}"
         name = region_input.strip()
         return (name, code)
             

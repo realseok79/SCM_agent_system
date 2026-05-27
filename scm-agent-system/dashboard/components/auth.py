@@ -12,7 +12,7 @@ def render_login_page():
     </style>
     <div style="text-align: center; padding: 3rem 0 1rem 0;">
         <h1 style="font-size: 2.5rem; font-weight: 800; color: #64ffda; margin-bottom: 0.5rem; letter-spacing: -0.03em; text-shadow: 0 0 30px rgba(100,255,218,0.25);">
-            🛰️ SCM Agent Control Tower
+             SCM Agent Control Tower
         </h1>
         <p style="color: #8892b0; font-size: 1rem; margin-bottom: 2rem; letter-spacing: 0.02em;">
             지능형 공급망 및 자율 재고 조율 시스템 관제탑
@@ -28,7 +28,7 @@ def render_login_page():
         """, unsafe_allow_html=True)
         
         with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("아이디 (Username)", "admin")
+            username = st.text_input("아이디 (Username)")
             password = st.text_input("비밀번호 (Password)", type="password")
             submitted = st.form_submit_button("관제탑 접속 시스템 활성화", use_container_width=True)
             
@@ -44,8 +44,8 @@ def render_login_page():
         
         # 사용자를 위한 친절한 계정 권한 가이드라인 추가
         st.info("""
-        💡 **테스트용 신속 접속 계정 정보**
-        - **최고 관리자 (ROLE_ADMIN)**: `admin` / `admin` (모든 승인, 반려, 지점 제어 가능)
-        - **물류 담당자 (ROLE_LOGISTICS)**: `logistics` / `logistics` (발주 승인 및 관제 가능, AI 피드백 제어 불가)
-        - **경영진 (ROLE_EXECUTIVE)**: `executive` / `executive` (시뮬레이션 및 현황 리포트 읽기 전용)
+         **접속 계정 권한 정보**
+        - **최고 관리자 (ROLE_ADMIN)**: 모든 승인, 반려, 지점 제어 가능
+        - **물류 담당자 (ROLE_LOGISTICS)**: 발주 승인 및 관제 가능, AI 피드백 제어 불가
+        - **경영진 (ROLE_EXECUTIVE)**: 시뮬레이션 및 현황 리포트 읽기 전용
         """)

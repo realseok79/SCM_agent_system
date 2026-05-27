@@ -24,6 +24,7 @@ public class DashboardService {
     private final StockOutLogRepository stockOutLogRepository;
     private final InventoryRebalancingOrderRepository rebalancingOrderRepository;
     private final AuditLogRepository auditLogRepository;
+    private final ImportBatchRepository importBatchRepository;
 
     public Map<String, Object> getSummary() {
         Map<String, Object> summary = new HashMap<>();
@@ -147,6 +148,34 @@ public class DashboardService {
         return riskResult;
     }
 
+    public Map<String, Map<String, Object>> getBatchRisks() {
+        Map<String, Map<String, Object>> result = new HashMap<>();
+        List<Region> regions = regionRepository.findAll();
+        for (Region r : regions) {
+            String code = r.getRegionCode();
+            Map<String, Object> regionData = new HashMap<>();
+            
+            // Risk score
+            Map<String, Object> riskResult = getRiskScore(code);
+            regionData.put("risk", riskResult);
+            
+            // Insight
+            RegionalInsight latestInsight = getLatestInsight(code);
+            regionData.put("insight", latestInsight);
+            
+            result.put(code, regionData);
+        }
+        return result;
+    }
+
+    public Map<String, Double> getRegionalInventorySums() {
+        List<RegionInventory> inventories = regionInventoryRepository.findAll();
+        return inventories.stream()
+                .collect(Collectors.groupingBy(
+                        inv -> inv.getId().getRegionCode(),
+                        Collectors.summingDouble(RegionInventory::getQuantity)));
+    }
+
     public List<Map<String, Object>> getAging(String regionCode) {
         // 재고 연령(Date가 오래된 순)별 통계
         List<RegionInventory> inventories = regionInventoryRepository.findByIdRegionCode(regionCode);
@@ -212,5 +241,35 @@ public class DashboardService {
             "주문 #" + transferId + " 반려 완료. 사유: " + (reason != null ? reason : "없음"), 
             "ADMIN_USER"));
         return rebalancingOrderRepository.save(order);
+    }
+
+    public Map<String, Object> getMlOpsMetrics() {
+        Map<String, Object> metrics = new HashMap<>();
+
+        List<ImportBatch> batches = importBatchRepository.findAll();
+        double avgDriftScore = 0.0;
+        double avgQualityScore = 1.0;
+
+        List<ImportBatch> validBatches = batches.stream()
+                .filter(b -> b.getDriftScore() != null && b.getQualityScore() != null)
+                .collect(Collectors.toList());
+
+        if (!validBatches.isEmpty()) {
+            avgDriftScore = validBatches.stream().mapToDouble(ImportBatch::getDriftScore).average().orElse(0.0);
+            avgQualityScore = validBatches.stream().mapToDouble(ImportBatch::getQualityScore).average().orElse(1.0);
+        }
+
+        long totalInventoryRecords = regionInventoryRepository.count();
+        double simulatedLatency = Math.max(2.5, Math.min(250.0, totalInventoryRecords * 0.015));
+        long maxThroughput = Math.max(1500, totalInventoryRecords * 5);
+
+        metrics.put("averageDriftScore", Math.round(avgDriftScore * 10000.0) / 100.0);
+        metrics.put("averageQualityScore", Math.round(avgQualityScore * 10000.0) / 100.0);
+        metrics.put("totalBatchesCount", batches.size());
+        metrics.put("simulatedLatency", Math.round(simulatedLatency * 10.0) / 10.0);
+        metrics.put("simulatedThroughput", maxThroughput);
+        metrics.put("activeWorkers", 4);
+
+        return metrics;
     }
 }

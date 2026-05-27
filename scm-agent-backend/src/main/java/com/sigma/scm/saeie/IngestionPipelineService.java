@@ -409,7 +409,7 @@ public class IngestionPipelineService {
         for (StagingInventoryImport stg : stgList) {
             if ("VALID".equals(stg.getValidationStatus())) {
                 RegionInventoryId invId = new RegionInventoryId(stg.getRegionCode(), stg.getProductName(), stg.getDate());
-                RegionInventory inv = regionInventoryRepository.findById(invId).orElse(new RegionInventory());
+                RegionInventory inv = regionInventoryRepository.findByIdForUpdate(invId).orElse(new RegionInventory());
                 inv.setId(invId);
                 inv.setQuantity(stg.getQuantity());
                 inv.setSourceBatchId(batchId);
@@ -728,10 +728,12 @@ public class IngestionPipelineService {
                         log.info("[PIPELINE] Auto-registered missing region: {}", rCode);
                     }
 
-                    RegionInventory inv = new RegionInventory();
-                    inv.setId(new RegionInventoryId(rCode, staging.getProductName(), staging.getDate()));
+                    RegionInventoryId invId = new RegionInventoryId(rCode, staging.getProductName(), staging.getDate());
+                    RegionInventory inv = regionInventoryRepository.findByIdForUpdate(invId).orElse(new RegionInventory());
+                    inv.setId(invId);
                     inv.setQuantity(staging.getQuantity());
                     inv.setSourceBatchId(batchId);
+                    inv.setUpdatedAt(LocalDateTime.now());
                     regionInventoryRepository.save(inv);
 
                     DailyDemandStatsId statsId = new DailyDemandStatsId(rCode, staging.getProductName(),
@@ -960,7 +962,6 @@ public class IngestionPipelineService {
                     // ── Merge strategy: combine columns from all selected sheets ──
                     // Build unified header
                     List<String> mergedHeaders = new ArrayList<>();
-                    List<Integer> headerOffsets = new ArrayList<>(); // offset for each sheet's columns in the merged row
                     Map<SheetParseResult, Integer> sheetOffsetMap = new LinkedHashMap<>();
 
                     for (SheetParseResult sp : selectedSheets) {

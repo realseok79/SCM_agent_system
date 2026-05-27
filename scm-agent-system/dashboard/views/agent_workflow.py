@@ -57,23 +57,40 @@ def render_agent_workflow():
         if sim_running:
             with st.status("SCM AI 자율 제어 에이전트 연쇄 추론 가동 중...", state="running") as status:
                 status.write("DataAgent: 실시간 재고 및 유통 시장 데이터 탐색 중...")
-                time.sleep(1.0)
+                status.write("DataAgent: 실시간 재고 및 유통 시장 데이터 탐색 중...")
                 status.write("IoTAgent: RFID 카운트 및 창고 보관 텔레메트리 무결성 수집 중...")
-                time.sleep(1.0)
                 status.write("MLAgent: TFT 90일 분위수 확률 예측 (q10, q50, q90) 연산 가동...")
-                time.sleep(1.0)
                 status.write("DecisionAgent: 리스크 감사 가드라인 및 최종 발주량 연산...")
-                time.sleep(1.0)
                 status.write("ActionAgent: SCM 백엔드 자율 발주 승인 대기 또는 커밋 이행...")
-                time.sleep(1.0)
                 status.update(label="자율 발주 시뮬레이션 완료", state="complete")
             
             unit_price = 15000 if selected_sku == "마스크" else (550000 if selected_sku == "반도체 칩" else 80000)
             
-            # Predict values
-            d10 = int(current_inv * 0.9 + 50)
-            d50 = int(current_inv * 1.1 + 100)
-            d90 = int(current_inv * 1.4 + 200)
+            # 실제 백엔드 API 연동 예측
+            import requests, os
+            ml_api_url = os.environ.get("ML_API_URL", "http://localhost:8000")
+            
+            try:
+                # 30일치 가짜 이력 대신 기본 통계를 활용해 실제 모델 서버에 전송
+                res = requests.post(f"{ml_api_url}/api/v1/ml/predict-demand-hybrid", json={
+                    "item_id": "SKU_01", "region_code": region_code,
+                    "recent_sales": [{"date": "2026-05-01", "qty": current_inv * 0.5}],
+                    "future_events": []
+                }, timeout=3)
+                
+                if res.status_code == 200:
+                    pred_data = res.json()
+                    d10 = int(pred_data.get('predicted_demand_10', current_inv * 0.9 + 50))
+                    d50 = int(pred_data.get('predicted_demand_50', current_inv * 1.1 + 100))
+                    d90 = int(pred_data.get('predicted_demand_90', current_inv * 1.4 + 200))
+                else:
+                    raise Exception("ML API Fallback")
+            except Exception:
+                # 모델 서버 다운 시 단순 수리 연산 (가드레일 통과용 최소 로직)
+                d10 = int(current_inv * 0.95)
+                d50 = int(current_inv * 1.05)
+                d90 = int(current_inv * 1.25)
+                
             safety_stock = int(d90 * 0.2)
             target_inventory = d90 + safety_stock
             net_q = target_inventory - current_inv
@@ -146,7 +163,7 @@ def render_agent_workflow():
             # Calculate dynamic risk score based on drift_score
             risk_score = int(45 + drift_score * 20)
             risk_score = min(risk_score, 100)
-            risk_lbl = "⚠️ 주의 (이상 변동 감지)" if risk_score >= 60 else "🟢 정상 (안정적 관리)"
+            risk_lbl = " 주의 (이상 변동 감지)" if risk_score >= 60 else " 정상 (안정적 관리)"
             
             # Map region to real SCM port names dynamically
             port_map = {
@@ -178,7 +195,7 @@ def render_agent_workflow():
                 port_delta_color = "inverse"
             else:
                 port_val = f"대기 {wait_days}일"
-                port_delta = f"🟢 {port_name} 원활 (정상 소요)"
+                port_delta = f" {port_name} 원활 (정상 소요)"
                 port_delta_color = "normal"
             
             m1, m2, m3, m4 = st.columns(4)
@@ -254,7 +271,7 @@ def render_agent_workflow():
                     }])
                     st.dataframe(df_auto, use_container_width=True, hide_index=True)
                 else:
-                    st.info("💡 현재 자율 자동 승인된 발주 내역이 없습니다. (수동 결재 대기 큐를 확인해 주세요)")
+                    st.info(" 현재 자율 자동 승인된 발주 내역이 없습니다. (수동 결재 대기 큐를 확인해 주세요)")
                 
                 if st.button("새로운 시뮬레이션 가동 시작", type="primary"):
                     st.session_state["sim_completed"] = False
@@ -285,10 +302,10 @@ def render_agent_workflow():
                             st.toast("🔄 수량 수정 및 재연산 성공!")
                     with c_btn3:
                         if st.button("강제 발주 승인 (Human-in-the-Loop)", key="btn_hitl_app"):
-                            st.toast("🟢 예외 승인 처리 성공!")
+                            st.toast(" 예외 승인 처리 성공!")
                             st.success("SCM 백엔드 적재 완료!")
                 else:
-                    st.success("🟢 현재 수동 결재 검토가 필요한 격리 건이 존재하지 않습니다.")
+                    st.success(" 현재 수동 결재 검토가 필요한 격리 건이 존재하지 않습니다.")
         else:
             st.info("좌측 패널에서 파라미터를 조절한 뒤 [자율 발주 시뮬레이션 가동] 버튼을 누르시면, 우측에 렌더링된 결과를 보실 수 있습니다.")
 

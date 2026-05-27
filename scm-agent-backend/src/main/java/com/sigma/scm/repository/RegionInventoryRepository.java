@@ -9,6 +9,10 @@ import java.util.List;
 
 @Repository
 public interface RegionInventoryRepository extends JpaRepository<RegionInventory, RegionInventoryId> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT r FROM RegionInventory r WHERE r.id = :id")
+    java.util.Optional<RegionInventory> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") RegionInventoryId id);
+
     List<RegionInventory> findByIdRegionCode(String regionCode);
     List<RegionInventory> findByIdRegionCodeAndIdDate(String regionCode, String date);
     void deleteBySourceBatchId(String sourceBatchId);

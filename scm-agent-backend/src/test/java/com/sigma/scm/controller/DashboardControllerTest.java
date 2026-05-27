@@ -123,4 +123,16 @@ public class DashboardControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Test action plan", response.getBody().getActionPlanMsg());
     }
+
+    @Test
+    public void testGetMlOpsMetrics() {
+        Map<String, Object> mockMetrics = new HashMap<>();
+        mockMetrics.put("averageDriftScore", 5.5);
+        when(dashboardService.getMlOpsMetrics()).thenReturn(mockMetrics);
+
+        ResponseEntity<Map<String, Object>> response = dashboardController.getMlOpsMetrics();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(5.5, response.getBody().get("averageDriftScore"));
+    }
 }

@@ -35,7 +35,7 @@ def render_audit_log_dashboard():
         filtered_logs = [l for l in filtered_logs if l.get("triggeredBy") == selected_user]
 
     if not filtered_logs:
-        st.warning("⚠️ 필터 조건에 일치하는 로그가 없습니다.")
+        st.warning(" 필터 조건에 일치하는 로그가 없습니다.")
         return
 
     # Render table
@@ -67,15 +67,15 @@ def render_audit_log_dashboard():
         border_col = "#4a5568"
         
         if etype == "ORDER_APPROVED":
-            prefix = "🟢"
+            prefix = ""
             bg_col = "#2f855a0a"
             border_col = "#38a169"
         elif etype == "ORDER_REJECTED":
-            prefix = "🔴"
+            prefix = ""
             bg_col = "#9b2c2c0a"
             border_col = "#e53e3e"
         elif etype == "DEVICE_MAINTENANCE":
-            prefix = "🛠️"
+            prefix = ""
             bg_col = "#d69e2e0a"
             border_col = "#dd6b20"
         elif etype == "DEVICE_ACTIVE":
@@ -83,7 +83,7 @@ def render_audit_log_dashboard():
             bg_col = "#3182ce0a"
             border_col = "#3182ce"
         elif etype == "RISK_ALERT":
-            prefix = "⚠️"
+            prefix = ""
             bg_col = "#e53e3e0d"
             border_col = "#e53e3e"
 

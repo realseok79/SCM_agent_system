@@ -3,9 +3,21 @@ import sqlite3
 import os
 import shutil
 import tempfile
+import json
+import re
 from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
+
+def sanitize_string(text: str) -> str:
+    if not text:
+        return text
+    # Strip HTML tags
+    text = re.sub(r"<[^>]*>", "", text)
+    # Strip dangerous characters like quotes, semicolons, etc.
+    text = re.sub(r"['\";\-]+", "", text)
+    return text.strip()
+
 
 from db import get_db_connection, init_db
 from models import (
@@ -36,9 +48,15 @@ app = FastAPI(
 )
 
 # CORS 미들웨어 추가
+allowed_origins_env = os.environ.get("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+else:
+    allowed_origins = ["http://localhost:8501", "http://127.0.0.1:8501"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,27 +75,44 @@ def health_check():
 
 @app.post("/api/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate):
+    from db import log_system_action
+    s_username = sanitize_string(user.username)
+    s_email = sanitize_string(user.email) if user.email else None
+    s_role = sanitize_string(user.role)
+    
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO users (username, email, role) VALUES (?, ?, ?)",
-            (user.username, user.email, user.role)
+            (s_username, s_email, s_role)
         )
         conn.commit()
         user_id = cursor.lastrowid
         
         cursor.execute("SELECT id, username, email, role, created_at FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
-        return dict(row)
-    except sqlite3.IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Username '{user.username}' is already taken."
+        res = dict(row)
+        
+        # Log audit action
+        log_system_action(
+            user_id="anonymous",
+            ip_address="127.0.0.1",
+            event_type="USER_CREATED",
+            action_details=f"Created user {s_username} with role {s_role}",
+            new_state=json.dumps(res),
+            is_automated=0
         )
+        return res
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "UNIQUE" in err_msg or "already taken" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Username '{s_username}' is already taken."
+            )
+        raise HTTPException(status_code=500, detail=err_msg)
     finally:
         conn.close()
 
@@ -98,9 +133,13 @@ def list_users():
 
 @app.post("/api/regions", response_model=RegionResponse, status_code=status.HTTP_201_CREATED)
 def create_region(region: RegionCreate):
+    from db import log_system_action
+    s_region_name = sanitize_string(region.region_name)
+    s_description = sanitize_string(region.description) if region.description else None
+    
     # 1. 지역명 표준화 작업 진행 (서울 -> 서울특별시, KR-11)
     try:
-        standardized_name, region_code = standardize_region(region.region_name)
+        standardized_name, region_code = standardize_region(s_region_name)
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -112,22 +151,34 @@ def create_region(region: RegionCreate):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO regions (region_name, region_code, description) VALUES (?, ?, ?)",
-            (standardized_name, region_code, region.description)
+            (standardized_name, region_code, s_description)
         )
         conn.commit()
         region_id = cursor.lastrowid
         
         cursor.execute("SELECT id, region_name, region_code, description, created_at FROM regions WHERE id = ?", (region_id,))
         row = cursor.fetchone()
-        return dict(row)
-    except sqlite3.IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Region '{standardized_name}' or code '{region_code}' is already registered."
+        res = dict(row)
+        
+        # Log audit action
+        log_system_action(
+            user_id="anonymous",
+            ip_address="127.0.0.1",
+            event_type="REGION_CREATED",
+            action_details=f"Created region {standardized_name} ({region_code})",
+            new_state=json.dumps(res),
+            is_automated=0
         )
+        return res
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        if "UNIQUE" in err_msg or "already registered" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Region '{standardized_name}' or code '{region_code}' is already registered."
+            )
+        raise HTTPException(status_code=500, detail=err_msg)
     finally:
         conn.close()
 
@@ -183,26 +234,70 @@ def delete_region(region_id: int):
         conn.close()
 
 # ── Excel/CSV Ingestion Routing Endpoint ──
-@app.post("/api/regions/upload", status_code=status.HTTP_200_OK)
+@app.post("/api/regions/upload", status_code=status.HTTP_202_ACCEPTED)
 def upload_region_inventory(file: UploadFile = File(...)):
     """
     Excel 또는 CSV 파일을 업로드하여 지역별 재고/수요 데이터를 파싱하고 DB에 라우팅(UPSERT)합니다.
+    (Celery 비동기 태스크 큐 격리 수행)
     """
-    # 1. 파일 임시 저장
-    suffix = os.path.splitext(file.filename)[1]
+    filename = file.filename or ""
+    suffix = os.path.splitext(filename)[1].lower()
+    if suffix not in [".csv", ".xlsx"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only .csv and .xlsx files are allowed."
+        )
+
+    # 10MB 제한 검사 (Content-Length 및 청크 단위 읽기 결합)
+    content_length = file.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File size exceeds the 10MB limit."
+                )
+        except ValueError:
+            pass
+
+    max_size = 10 * 1024 * 1024
+    size = 0
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
+        for chunk in iter(lambda: file.file.read(8192), b""):
+            size += len(chunk)
+            if size > max_size:
+                tmp.close()
+                if os.path.exists(tmp.name):
+                    os.remove(tmp.name)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File size exceeds the 10MB limit."
+                )
+            tmp.write(chunk)
         tmp_path = tmp.name
-        
+
     try:
-        from utils.data_parser import parse_and_route_file
-        stats = parse_and_route_file(tmp_path)
-        return stats
+        from celery_tasks import process_upload_task
+        task = process_upload_task.delay(tmp_path)
+        
+        # Eager Mode (동기) 일 때는 즉시 결과 리턴
+        if task.ready():
+            res = task.result
+            if isinstance(res, Exception):
+                raise res
+            return res
+            
+        return {"status": "ACCEPTED", "task_id": task.id, "message": "File processing has been queued."}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        # Eager Mode에서 성공 시 이미 celery task가 삭제했을 수 있지만,
+        # ready()가 참일 때만 안전하게 삭제 시도
+        if 'task' in locals() and task.ready():
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 # ── ML Agent Router ──
 from agents.ml_agent import router as ml_router

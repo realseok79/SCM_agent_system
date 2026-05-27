@@ -45,6 +45,20 @@ public class OrderGuardrailServiceTest {
     public void testRelativeCeilingApproved() {
         OrderGuardrailService.GuardrailResult result = guardrailService.validateOrder(250.0, Arrays.asList(100.0, 100.0, 100.0, 100.0, 100.0));
         assertEquals("APPROVED", result.getStatus());
-        assertEquals("모든 가드레일 제어 조건 만족", result.getReason());
+        assertTrue(result.getReason().contains("모든 가드레일 제어 조건 만족"));
+    }
+
+    @Test
+    public void testDynamicSeasonalityCeiling() {
+        // Normal ceiling is 3.0x, so with avg=100, relative ceiling is 300.
+        // If order is 450, it is blocked normally.
+        OrderGuardrailService.GuardrailResult resultNormal = guardrailService.validateOrder(450.0, Arrays.asList(100.0, 100.0, 100.0, 100.0, 100.0), 1.0);
+        assertEquals("BLOCKED", resultNormal.getStatus());
+
+        // With seasonality factor = 2.0, dynamic ceiling ratio becomes 6.0, relative ceiling is 600.
+        // Order of 450 should be approved.
+        OrderGuardrailService.GuardrailResult resultSeasonal = guardrailService.validateOrder(450.0, Arrays.asList(100.0, 100.0, 100.0, 100.0, 100.0), 2.0);
+        assertEquals("APPROVED", resultSeasonal.getStatus());
+        assertTrue(resultSeasonal.getReason().contains("모든 가드레일 제어 조건 만족"));
     }
 }

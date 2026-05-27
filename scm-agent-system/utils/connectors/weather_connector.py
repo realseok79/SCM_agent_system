@@ -138,6 +138,64 @@ def get_seeded_mock_weather(region_code: str, date_str: str) -> Dict:
         "weather_desc": weather_desc
     }
 
+import time
+import functools
+
+# Circuit Breaker 상태 상수
+STATE_CLOSED = "CLOSED"
+STATE_OPEN = "OPEN"
+STATE_HALF_OPEN = "HALF_OPEN"
+
+class CircuitBreaker:
+    def __init__(self, failure_threshold=3, recovery_time=30):
+        self.failure_threshold = failure_threshold
+        self.recovery_time = recovery_time
+        self.state = STATE_CLOSED
+        self.failure_count = 0
+        self.last_failure_time = None
+
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if self.state == STATE_OPEN:
+                if time.time() - self.last_failure_time > self.recovery_time:
+                    self.state = STATE_HALF_OPEN
+                    print("⚡ [Circuit Breaker] Half-open state: testing connection...")
+                else:
+                    raise RuntimeError("[Circuit Breaker] Open: Bypassing request, using fallback.")
+
+            # 지수 백오프 기반 재시도
+            retries = 3
+            backoff = 1.0
+            for attempt in range(retries):
+                try:
+                    res = func(*args, **kwargs)
+                    if self.state in (STATE_HALF_OPEN, STATE_OPEN):
+                        print("🔌 [Circuit Breaker] Closed: Connection recovered!")
+                    self.state = STATE_CLOSED
+                    self.failure_count = 0
+                    return res
+                except Exception as e:
+                    if attempt < retries - 1:
+                        time.sleep(backoff)
+                        backoff *= 2.0
+                    else:
+                        self.failure_count += 1
+                        self.last_failure_time = time.time()
+                        if self.failure_count >= self.failure_threshold:
+                            self.state = STATE_OPEN
+                            print("🔌 [Circuit Breaker] Tripped to OPEN state!")
+                        raise e
+        return wrapper
+
+weather_api_breaker = CircuitBreaker(failure_threshold=3, recovery_time=30)
+
+@weather_api_breaker
+def _call_weather_api_http(url):
+    res = requests.get(url, timeout=3.0)
+    res.raise_for_status()
+    return res.json()
+
 def fetch_live_weather(region_code: str, date_str: str) -> Dict:
     """
     외부 OpenWeatherMap API 또는 기상청 API를 통해 실시간 데이터를 수집합니다.
@@ -154,34 +212,32 @@ def fetch_live_weather(region_code: str, date_str: str) -> Dict:
         
     ow_key = os.environ.get("OPENWEATHER_API_KEY", "")
     
-    # 1. OpenWeatherMap API 호출 시도
+    # 1. OpenWeatherMap API 호출 시도 (Circuit Breaker 적용)
     if ow_key:
         lat, lon = meta["lat"], meta["lon"]
         url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={ow_key}&units=metric"
         try:
-            res = requests.get(url, timeout=3.0)
-            if res.status_code == 200:
-                data = res.json()
-                temp = float(data.get("main", {}).get("temp", 15.0))
-                humidity = float(data.get("main", {}).get("humidity", 60.0))
+            data = _call_weather_api_http(url)
+            temp = float(data.get("main", {}).get("temp", 15.0))
+            humidity = float(data.get("main", {}).get("humidity", 60.0))
+            
+            # 강수량 추출
+            precipitation = 0.0
+            if "rain" in data and "1h" in data["rain"]:
+                precipitation = float(data["rain"]["1h"])
+            elif "snow" in data and "1h" in data["snow"]:
+                precipitation = float(data["snow"]["1h"])
                 
-                # 강수량 추출
-                precipitation = 0.0
-                if "rain" in data and "1h" in data["rain"]:
-                    precipitation = float(data["rain"]["1h"])
-                elif "snow" in data and "1h" in data["snow"]:
-                    precipitation = float(data["snow"]["1h"])
-                    
-                weather_desc = data.get("weather", [{}])[0].get("main", "Clear")
-                
-                return {
-                    "temp": round(temp, 1),
-                    "humidity": round(humidity, 1),
-                    "precipitation": round(precipitation, 1),
-                    "weather_desc": weather_desc
-                }
-        except Exception:
-            pass # 실패 시 KMA 또는 Mock Fallback 진행
+            weather_desc = data.get("weather", [{}])[0].get("main", "Clear")
+            
+            return {
+                "temp": round(temp, 1),
+                "humidity": round(humidity, 1),
+                "precipitation": round(precipitation, 1),
+                "weather_desc": weather_desc
+            }
+        except Exception as e:
+            print(f"⚠️ Weather API call failed: {e}. Fallback to mock.")
             
     # 2. 기상청 API 호출 시도 (참고용 구조 제공, 실제 서비스 키 없을 시 Mock)
     # 기상청 연동을 원할 시 KMA_API_KEY 설정이 필요하며, 여기서는 모의 데이터로 최종 Fallback합니다.

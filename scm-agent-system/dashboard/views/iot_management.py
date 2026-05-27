@@ -9,11 +9,13 @@ def render_iot_management():
     # 1. 권한 검증 (ROLE_ADMIN 만 접근 허용)
     user_role = st.session_state.get("user_role", "ROLE_USER")
     if user_role != "ROLE_ADMIN":
-        st.error("🚨 권한 오류: 이 페이지는 관리자(ROLE_ADMIN)만 접근할 수 있습니다.")
+        st.error(" 권한 오류: 이 페이지는 관리자(ROLE_ADMIN)만 접근할 수 있습니다.")
         return
 
     inject_custom_css()
     st.markdown(f'<div class="hdr"><div><div class="hdr-t">IoT 센서 모니터링 (REST 연동)</div><div class="hdr-s">물류 창고 실시간 IoT 센서 디바이스 등록 및 활성 상태 중앙 관리 통제탑</div></div></div>', unsafe_allow_html=True)
+    if st.session_state.get("is_offline", False):
+        st.warning("⚠️ 시스템이 오프라인 모드입니다. 신규 IoT 디바이스 등록 및 상태 제어가 비활성화됩니다.")
 
     # 2. 지역 정보 가져오기 (디바이스 등록 시 매핑할 지역 목록)
     regions = auth_helper.api_get("/api/regions") or []
@@ -30,7 +32,7 @@ def render_iot_management():
                 selected_region_label = st.selectbox("연동 지점", list(region_options.keys()))
                 region_code = region_options[selected_region_label]
             else:
-                st.warning("⚠️ 등록된 지점이 없어 디바이스를 매핑할 수 없습니다.")
+                st.warning(" 등록된 지점이 없어 디바이스를 매핑할 수 없습니다.")
                 region_code = None
                 
             sensor_type = st.selectbox("센서 유형", ["temperature", "humidity", "vibration", "rfid_count"])
@@ -70,7 +72,7 @@ def render_iot_management():
                     "디바이스 ID": dev.get("deviceId"),
                     "지점 코드": dev.get("regionCode"),
                     "센서 유형": dev.get("sensorType"),
-                    "상태": "🟢 ACTIVE" if dev.get("status") == "ACTIVE" else "🛠️ MAINTENANCE",
+                    "상태": " ACTIVE" if dev.get("status") == "ACTIVE" else " MAINTENANCE",
                     "마지막 수신 시간": dev.get("lastPingAt") or "수신 기록 없음"
                 })
             df = pd.DataFrame(df_data)
@@ -88,7 +90,7 @@ def render_iot_management():
                 c2.write(f"상태: `{'ACTIVE' if curr_status == 'ACTIVE' else 'MAINTENANCE'}`")
                 
                 target_status = "MAINTENANCE" if curr_status == "ACTIVE" else "ACTIVE"
-                btn_label = "🛠️ 점검 전환" if curr_status == "ACTIVE" else "🟢 가동 전환"
+                btn_label = "🔧 점검 전환" if curr_status == "ACTIVE" else "▶️ 가동 전환"
                 
                 if c3.button(btn_label, key=f"toggle_{d_id}"):
                     patch_payload = {"status": target_status}

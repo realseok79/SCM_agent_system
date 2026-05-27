@@ -55,14 +55,14 @@ def render_xai_trace(order_data, is_pending):
     with m3:
         st.metric(
             label="IoT 환경 센서 상태",
-            value="최우수 (Normal)",
-            delta="온도 18.5°C | 습도 42%"
+            value="최우수 (Normal)" if alpha < 1.5 else "점검 필요 (Warning)",
+            delta=f"온도 {18.0 + alpha:.1f}°C | 습도 {42 + int(alpha*5)}%"
         )
     with m4:
         st.metric(
             label="항만 혼잡도 (Spire)",
-            value="대기 3.5일",
-            delta="상하이/부산 적체 가중"
+            value=f"대기 {3.0 + alpha:.1f}일",
+            delta="주요 항만 적체 가중" if alpha > 1.2 else "원활"
         )
 
     st.markdown("<br>", unsafe_allow_html=True)

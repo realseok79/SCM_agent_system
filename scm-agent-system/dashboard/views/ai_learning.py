@@ -120,9 +120,9 @@ def render_ai_learning_dashboard():
         warnings = df[df['effectiveConfidence'] < 0.3]
         if not warnings.empty:
             for _, row in warnings.iterrows():
-                st.error(f"🚨 **신뢰도 경보**: `{row['rawHeader']}` ➔ `{row['mappedColumn']}` 의 실효 신뢰도가 **{row['effectiveConfidence']:.2f}**로 매우 낮습니다. 매핑 알고리즘 조정을 고려해 주세요.")
+                st.error(f" **신뢰도 경보**: `{row['rawHeader']}` ➔ `{row['mappedColumn']}` 의 실효 신뢰도가 **{row['effectiveConfidence']:.2f}**로 매우 낮습니다. 매핑 알고리즘 조정을 고려해 주세요.")
         else:
-            st.success("✅ 모든 활성 매핑의 실효 신뢰도가 임계치(0.3) 이상으로 안정적으로 제어되고 있습니다.")
+            st.success(" 모든 활성 매핑의 실효 신뢰도가 임계치(0.3) 이상으로 안정적으로 제어되고 있습니다.")
 
     st.markdown('<div class="sec">특정 매핑의 피드백 학습 시계열 적응 곡선 (Dynamic Time-Series Curve)</div>', unsafe_allow_html=True)
     

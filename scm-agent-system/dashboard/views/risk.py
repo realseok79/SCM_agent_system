@@ -10,18 +10,22 @@ def render_risk_dashboard():
 
     regions = auth_helper.api_get("/api/regions")
     if not regions:
-        st.warning("⚠️ 분석할 등록 지점이 없습니다.")
+        st.warning(" 분석할 등록 지점이 없습니다.")
         return
+
+    # Batch fetch risk scores and insights to avoid N+1 queries
+    batch_risks = auth_helper.api_get("/api/dashboard/batch-risks") or {}
 
     for r in regions:
         code = r["regionCode"]
-        risk = auth_helper.api_get(f"/api/dashboard/region/{code}/risk-score")
+        region_data = batch_risks.get(code, {})
+        risk = region_data.get("risk")
         if risk:
             level = risk.get("riskLevel", "LOW")
             color = "#ff5c5c" if level == "HIGH" else "#00e5a0"
             bg_color = "rgba(255, 92, 92, 0.06)" if level == "HIGH" else "rgba(0, 229, 160, 0.06)"
             
-            insight = auth_helper.api_get(f"/api/dashboard/region/{code}/insight")
+            insight = region_data.get("insight")
             badge_html = ""
             if insight:
                 source = insight.get("source", "RULE_ENGINE")
@@ -66,7 +70,7 @@ def render_risk_dashboard():
             col_iot, col_port = st.columns(2)
             with col_iot:
                 if iot_health_val is not None:
-                    status_color = "🔴" if iot_health_val < 80.0 else "🟢"
+                    status_color = "🟢" if iot_health_val >= 80.0 else ("🟡" if iot_health_val >= 50.0 else "🔴")
                     st.markdown(f"""
                     <div style='background-color:#111827; border: 1px solid #374151; padding:10px 14px; border-radius:6px; margin-bottom:15px;'>
                         <div style='font-size:11px; color:#9ca3af;'>창고 IoT 센서 건강도</div>
@@ -83,7 +87,7 @@ def render_risk_dashboard():
                     
             with col_port:
                 if port_congestion_val is not None:
-                    status_color = "🔴" if port_congestion_val > 50.0 else ("🟡" if port_congestion_val > 25.0 else "🟢")
+                    status_color = "🟢" if port_congestion_val <= 25.0 else ("🟡" if port_congestion_val <= 50.0 else "🔴")
                     st.markdown(f"""
                     <div style='background-color:#111827; border: 1px solid #374151; padding:10px 14px; border-radius:6px; margin-bottom:15px;'>
                         <div style='font-size:11px; color:#9ca3af;'>해역 항만 혼잡도</div>

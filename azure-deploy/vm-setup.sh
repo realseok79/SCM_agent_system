@@ -117,9 +117,11 @@ fi
 
 echo -e "🚀 Using Compose Command: ${BLUE}$COMPOSE_CMD${NC}"
 
-# Stop any running containers and start new build
-$COMPOSE_CMD down || true
-$COMPOSE_CMD up -d --build
+# Rebuild and recreate only the frontend container safely to bypass docker-compose v1 bugs
+$COMPOSE_CMD build frontend
+$COMPOSE_CMD stop frontend || true
+$COMPOSE_CMD rm -f frontend || true
+$COMPOSE_CMD up -d frontend
 
 echo -e "\n${GREEN}🎉 SCM Agent System successfully deployed on the VM!${NC}"
 echo -e "🐳 Active Containers:${NC}"

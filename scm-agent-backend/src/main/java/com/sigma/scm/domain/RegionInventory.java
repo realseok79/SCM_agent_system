@@ -1,14 +1,19 @@
 package com.sigma.scm.domain;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "region_inventory")
-@Data
+@Table(name = "region_inventory", indexes = {
+    @Index(name = "idx_inventory_date", columnList = "date"),
+    @Index(name = "idx_inventory_region_product", columnList = "region_code, product_name")
+})
+@Getter
+@Setter
 @NoArgsConstructor
 public class RegionInventory {
 

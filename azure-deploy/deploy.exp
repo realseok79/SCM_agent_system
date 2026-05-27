@@ -1,0 +1,18 @@
+#!/usr/bin/expect -f
+
+set timeout 600
+spawn bash ./azure-deploy/upload-and-run-password.sh
+
+expect {
+    -nocase "password:" {
+        send "Scm_Secure_Password_2026!\r"
+        exp_continue
+    }
+    "Permission denied" {
+        send_user "\nError: Permission denied. Wrong password or access issues.\n"
+        exit 1
+    }
+    eof
+}
+catch wait result
+exit [lindex $result 3]

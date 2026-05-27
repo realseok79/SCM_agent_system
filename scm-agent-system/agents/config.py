@@ -35,6 +35,13 @@ GUARDRAILS = {
     "ABSOLUTE_MAX_CAPACITY": float(os.getenv("ABSOLUTE_MAX_CAPACITY", 5000.0)),
 }
 
+# ── SCM Default Cost Parameters (B4, B5)
+SCM_DEFAULTS = {
+    "HOLDING_COST_PER_UNIT_PER_DAY": 0.5,
+    "STOCKOUT_PENALTY_PER_UNIT": 10.0,
+    "ORDER_FIXED_COST_PER_ORDER": 200.0,
+}
+
 # ── Agent Configurations
 AGENT_CONFIG = {
     "data_agent": {

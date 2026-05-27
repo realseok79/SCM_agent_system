@@ -55,6 +55,7 @@ public class RowValidatorTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     public void testFractionalQuantityRoundingWarning() {
         List<List<String>> rows = new ArrayList<>();
         rows.add(Arrays.asList("KR-11", "Mask", "2026-05-19", "12.7"));

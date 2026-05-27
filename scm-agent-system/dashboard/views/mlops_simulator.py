@@ -47,19 +47,14 @@ def render_mlops_simulator_dashboard():
         st.session_state.pop("hitl_pending_orders", None)
 
     # ── 커스텀 메인 헤더 디자인 ──
-    st.markdown("""
-    <div class="hdr">
-        <div>
-            <div class="hdr-t">SCM 하이브리드 MLOps 운영 시뮬레이터</div>
-            <div class="hdr-s">
-                TFT 분위수 예측 모델 서빙 최적화, SHAP 설명성, Human-in-the-Loop 의사결정 제어 및 데이터 드리프트 CT 트리거 통합 관제탑
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    from components.common import render_header, render_section, render_kpi_card
+    render_header(
+        "SCM 하이브리드 MLOps 운영 시뮬레이터",
+        "TFT 분위수 예측 모델 서빙 최적화, SHAP 설명성, Human-in-the-Loop 의사결정 제어 및 데이터 드리프트 CT 트리거 통합 관제탑"
+    )
 
     # ── MLOps 시뮬레이터 제어판 (좌측 입력, 우측 실시간 시뮬레이션 지표) ──
-    st.markdown('<div class="sec">하이브리드 MLOps 실시간 인프라 시뮬레이션</div>', unsafe_allow_html=True)
+    render_section("하이브리드 MLOps 실시간 인프라 시뮬레이션")
     
     col_ctrl, col_stats = st.columns([1, 1.2])
 
@@ -69,7 +64,7 @@ def render_mlops_simulator_dashboard():
         
         # 슬라이더 1: 오차 임계치 가드라인
         threshold = st.slider(
-            "⚠️ 오차 임계치 가드라인 (MAE Limit, %)", 
+            " 오차 임계치 가드라인 (MAE Limit, %)", 
             min_value=5, max_value=30, value=15, step=1,
             help="이 임계치를 실제 예측 오차가 초과하면 데이터 드리프트가 판정되고 자동 재학습(CT)이 활성화됩니다."
         )
@@ -101,66 +96,47 @@ def render_mlops_simulator_dashboard():
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── MLOps 시뮬레이터 수리 연산 및 출력 ──
-    # 1. 지연 시간 (Latency, ms) 수리 공식 계산
-    # ONNX 적용 시 연산 속도 70% 감소 보정
-    onnx_factor = 0.3 if onnx_comp else 1.0
-    base_latency_per_item = 0.05 * onnx_factor # ONNX 시 개당 0.015ms, 일반 시 0.05ms
+    # 백엔드 API 실시간 지표 연동
+    real_metrics = auth_helper.api_get("/api/dashboard/mlops-metrics") or {}
     
-    # 지연 시간(ms) = (배치 규모 / (워커 수 * 80)) * 개당 지연시간에 비례하도록 설계
-    sim_latency = (batch_scale / (workers * 80)) * base_latency_per_item * 1000
-    sim_latency = max(2.5, round(sim_latency, 1)) # 최소 2.5ms 보장
+    # 1. 지연 시간 (Latency, ms) 수리 공식 계산 (백엔드 데이터 부하와 연동)
+    backend_latency = real_metrics.get("simulatedLatency", 15.0)
+    onnx_factor = 0.3 if onnx_comp else 1.0
+    sim_latency = round(backend_latency * onnx_factor * (batch_scale / 5000.0) * (4.0 / workers), 1)
+    sim_latency = max(2.5, sim_latency) # 최소 2.5ms 보장
 
     # 2. 시스템 스루풋 (Throughput, items/sec)
-    sim_throughput = int((workers * 1500) / onnx_factor)
+    backend_throughput = real_metrics.get("simulatedThroughput", 5000)
+    sim_throughput = int(backend_throughput * (workers / 4.0) / onnx_factor)
     
     # 3. 데이터 드리프트 및 CT 상태 판정
+    # 백엔드의 실제 업로드 파일 품질/드리프트와 사용자가 연출한 마켓 시나리오를 연립 계산
+    real_drift = real_metrics.get("averageDriftScore", 5.0) # 기본 5%
     if market_state == "정상 수요 패턴 (Normal)":
-        sim_drift_error = 9.2 + np.random.uniform(-0.5, 0.5)
+        sim_drift_error = round(real_drift * 0.8, 2)
     else:
-        sim_drift_error = 22.4 + np.random.uniform(-1.0, 1.0)
+        sim_drift_error = round(max(22.0, real_drift * 2.5), 2)
         
     sim_drift_error = round(sim_drift_error, 2)
     drift_triggered = sim_drift_error > threshold
 
     with col_stats:
         # 실시간 성능 메트릭 렌더링
-        st.markdown('<div class="kg">', unsafe_allow_html=True)
-        
-        # 메트릭 1: 지연 시간
         lat_color = "g" if sim_latency < 100 else ("y" if sim_latency < 300 else "r")
-        st.markdown(f"""
-        <div class="kc">
-            <div class="kl">평균 추론 지연 시간</div>
-            <div class="kv {lat_color}">{sim_latency} ms</div>
-            <div class="ku">목표치: < 150ms 이내</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 메트릭 2: 처리 성능
-        st.markdown(f"""
-        <div class="kc">
-            <div class="kl">최대 추론 처리량</div>
-            <div class="kv b">{sim_throughput:,} SKU/s</div>
-            <div class="ku">ONNX 최적화 배율 적용</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 메트릭 3: 데이터 드리프트 오차
         drift_color = "r" if drift_triggered else "g"
-        st.markdown(f"""
-        <div class="kc">
-            <div class="kl">실시간 SCM MAE 오차</div>
-            <div class="kv {drift_color}">{sim_drift_error} %</div>
-            <div class="ku">가드라인 임계치: {threshold}%</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+
+        c_metric1, c_metric2, c_metric3 = st.columns(3)
+        with c_metric1:
+            render_kpi_card("평균 추론 지연 시간", f"{sim_latency} ms", "목표치: < 150ms 이내", lat_color)
+        with c_metric2:
+            render_kpi_card("최대 추론 처리량", f"{sim_throughput:,} SKU/s", "ONNX 최적화 배율 적용", "b")
+        with c_metric3:
+            render_kpi_card("실시간 SCM MAE 오차", f"{sim_drift_error} %", f"가드라인 임계치: {threshold}%", drift_color)
 
     st.write("")
 
     # ── Phase 6: 설명 가능한 AI (XAI) 및 실시간 TFT 하이브리드 수요 예측 ──
-    st.markdown('<div class="sec" style="font-size: 16px; font-weight: 600; color: #e8eaed; border-bottom: 2px solid #3c4043; padding-bottom: 6px;">실시간 TFT 하이브리드 수요 예측 및 SHAP 기여도 산출</div>', unsafe_allow_html=True)
+    render_section("실시간 TFT 하이브리드 수요 예측 및 SHAP 기여도 산출", "font-size: 16px; font-weight: 600; color: #e8eaed; border-bottom: 2px solid #3c4043; padding-bottom: 6px;")
     
     col_inputs, col_xai = st.columns([1, 1.2])
     
@@ -234,9 +210,10 @@ def render_mlops_simulator_dashboard():
         # API 예측 호출용 가짜 과거 판매량 구성
         sales_records = []
         for i in range(30):
+            variance = ((i * 13 + 7) % 61) - 30 # Deterministic variance between -30 and 30
             sales_records.append({
                 "date": f"2026-04-{i+1:02d}",
-                "qty": float(base_sales + np.random.randint(-30, 30))
+                "qty": float(base_sales + variance)
             })
             
         future_events = [{"date": "2026-05-01", "is_holiday": is_holiday, "event_type": "PROMOTION" if is_holiday else "NORMAL"}]
@@ -328,7 +305,7 @@ def render_mlops_simulator_dashboard():
     st.write("")
 
     # ── Human-in-the-Loop (의사결정 제어권) 제어 센터 ──
-    st.markdown('<div class="sec">Human-in-the-Loop (HITL) 예외 발주 승인 및 거절 통제소</div>', unsafe_allow_html=True)
+    render_section("Human-in-the-Loop (HITL) 예외 발주 승인 및 거절 통제소")
     st.write("안전 재공 차이를 초과하거나 불확실성(분위수 10% ~ 90% 편차)이 임계치를 초과하여 수동 검토(`PENDING`) 상태로 격리된 발주 목록입니다. 현업 담당자는 데이터를 검토 후 승인 혹은 거절할 수 있습니다.")
     
     # Reset/update pending orders if user changed the selected product or region inside MLOps dropdowns
@@ -340,53 +317,44 @@ def render_mlops_simulator_dashboard():
         st.session_state.pop("hitl_pending_orders", None)
         st.session_state.pop("tft_pred_result", None)
 
-    # 세션 상태에 HITL 가짜 데이터 스캐폴딩
+    # 실제 서버에서 대기 중인 발주 목록 호출 (가짜 스캐폴딩 삭제)
     if "hitl_pending_orders" not in st.session_state:
-        second_item_id = "SEMI_CHIP_X1" if item_id != "SEMI_CHIP_X1" else "MASK_A01"
-        st.session_state["hitl_pending_orders"] = [
-            {
-                "id": "ORD-20260521-01",
-                "item_id": item_id,
-                "region": f"{region_name} ({region_code})",
-                "ai_predicted_50": 340,
-                "uncertainty_gap": 210, # q90 - q10 오차
-                "suggested_order_qty": 450,
+        pending_orders_raw = auth_helper.api_get("/api/dashboard/pending-orders") or []
+        mapped_orders = []
+        for raw in pending_orders_raw:
+            mapped_orders.append({
+                "id": f"ORD-{raw.get('transferId', 'TMP')}",
+                "item_id": raw.get("productName", "SKU"),
+                "region": f"{raw.get('toRegion', 'Region')}",
+                "ai_predicted_50": int(raw.get("transferQty", 100) * 0.9),
+                "uncertainty_gap": int(raw.get("transferQty", 100) * 0.2),
+                "suggested_order_qty": raw.get("transferQty", 100),
                 "status": "PENDING",
-                "reason": "🚨 분위수 불확실성 편차 과다 발생 (q90-q10 > 200)"
-            },
-            {
-                "id": "ORD-20260521-02",
-                "item_id": second_item_id,
-                "region": "부산광역시 물류센터 (KR-21)" if region_code != "KR-21" else "인천광역시 물류센터 (KR-12)",
-                "ai_predicted_50": 1820,
-                "uncertainty_gap": 950,
-                "suggested_order_qty": 2000,
-                "status": "PENDING",
-                "reason": "🚨 MOQ(최소 발주량) 초과 급상승"
-            }
-        ]
+                "reason": raw.get("reason", "자동 분류된 검토 대기 건")
+            })
+        st.session_state["hitl_pending_orders"] = mapped_orders
 
-    pending_list = st.session_state["hitl_pending_orders"]
+    pending_list = [o for o in st.session_state["hitl_pending_orders"] if o["status"] == "PENDING"]
     
-    # 네이티브 Streamlit 컨테이너 카드로 리액트 DOM 충돌 원천 해결 및 실시간 수리 연동
-    for idx, order in enumerate(pending_list):
-        if order["status"] == "PENDING":
-            # Dynamic live calculations to sync the card below with the sliders/checkboxes above!
-            if order["id"] == "ORD-20260521-01":
-                order["ai_predicted_50"] = base_sales
-                order["uncertainty_gap"] = int(base_sales * (0.5 if not is_holiday else 0.8))
-                
-                # Dynamic MOQ (rounded to nearest 50)
-                suggested = int(base_sales * (1.2 if not is_holiday else 1.5))
-                order["suggested_order_qty"] = max(100, int((suggested + 49) // 50) * 50)
-                
-                if order["uncertainty_gap"] > 200:
-                    order["reason"] = "🚨 분위수 불확실성 편차 과다 발생 (q90-q10 > 200)"
-                elif is_holiday:
-                    order["reason"] = "🚨 초대형 유통 행사 리스크 감지 (수동 검토)"
-                else:
-                    order["reason"] = "🚨 정상 범주 외 예외 발주 격리"
-
+    # [고도화 C11] 데이터 테이블 페이징 고도화 (Pagination)
+    if pending_list:
+        import math
+        
+        PAGE_SIZE = 3
+        total_pages = math.ceil(len(pending_list) / PAGE_SIZE)
+        
+        st.markdown(f"<div style='font-size: 13px; color: #8892b0; margin-bottom: 10px;'>전체 {len(pending_list)}건 중 {PAGE_SIZE}건씩 표시 (총 {total_pages}페이지)</div>", unsafe_allow_html=True)
+        
+        cols_pag = st.columns([1, 1, 4])
+        with cols_pag[0]:
+            current_page = st.number_input("페이지 선택", min_value=1, max_value=max(1, total_pages), value=1, step=1, key="hitl_page_num")
+        
+        start_idx = (current_page - 1) * PAGE_SIZE
+        end_idx = start_idx + PAGE_SIZE
+        page_items = pending_list[start_idx:end_idx]
+        
+        for idx, order in enumerate(page_items):
+            # 네이티브 Streamlit 컨테이너 카드로 리액트 DOM 충돌 원천 해결 및 실시간 수리 연동
             with st.container(border=True):
                 # 상단 헤더행
                 col_h1, col_h2 = st.columns([4, 1])
@@ -406,7 +374,7 @@ def render_mlops_simulator_dashboard():
                 with m_col3:
                     st.metric(label="추천 발주 공급량 (MOQ 보정)", value=f"{order['suggested_order_qty']:,} 개")
                 
-                st.warning(f"🛡️ 시스템 수동 격리 사유: {order['reason']}")
+                st.warning(f"🛡 시스템 수동 격리 사유: {order['reason']}")
                 
                 # 사용자 액션용 컬럼 분할
                 col_act1, col_act2, _ = st.columns([1, 1, 4])

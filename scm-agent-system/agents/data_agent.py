@@ -14,17 +14,19 @@ import pandas as pd
 from datetime import datetime
 from typing import Optional
 from pytrends.request import TrendReq
+import threading
 
-from dto.schemas import DataDTO, DemandDTO, RiskCategory, AlertLevel, OperationMode
+from dto.schemas import DataDTO, DemandDTO, RiskCategory, AlertLevel, OperationMode, StressEvent
 from pydantic import BaseModel, Field
 from utils.logger import get_logger
+from contextlib import closing
 
 class UnstructuredParseOutput(BaseModel):
     item_name: str = Field(description="추출된 품목명 또는 제품명 (예: 반도체 칩, 마스크, 의류 등)")
     quantity: float = Field(description="추출된 발주 수량")
     category: str = Field(description="리스크 카테고리. 다음 중 하나여야 함: LOGISTICS_AND_TRADE, WEATHER_AND_CLIMATE, TECH_AND_SEMICONDUCTOR, FINANCES_AND_MACRO, UNCLASSIFIED")
 
-from agents.config import PATHS, NETWORK
+from agents.config import PATHS, NETWORK, SCM_DEFAULTS
 from agents.data_config import build_weight_map, get_demand_impact_score
 
 logger = get_logger("DataAgent")
@@ -77,6 +79,7 @@ class DataAgent:
     def __init__(self):
         self._db: list[dict] = self._load_db()
         # 통계적 기준선 및 Analysis Agent 전달용 시계열 Buffer 초기화
+        self._history_lock = threading.Lock()
         self._demand_history: list[float] = []
         self._lt_history: list[float] = []
         self.last_processed_day: int = -1  # [추가] 중복 누적 방지용 일자 추적 필드
@@ -169,9 +172,10 @@ class DataAgent:
 
     def _fix_missing(self, value: Optional[float], field: str) -> float:
         if value is None or np.isnan(value):
-            if len(self._demand_history) >= 1:
-                fallback = float(np.mean(self._demand_history[-7:]))
-                return fallback
+            with self._history_lock:
+                if len(self._demand_history) >= 1:
+                    fallback = float(np.mean(self._demand_history[-7:]))
+                    return fallback
             return 100.0
         return float(value)
 
@@ -179,10 +183,11 @@ class DataAgent:
         """
         포아송 수요 분포의 근사적 3σ 클리핑
         """
-        if len(self._demand_history) < 10:
-            return value
+        with self._history_lock:
+            if len(self._demand_history) < 10:
+                return value
 
-        recent = self._demand_history[-30:]
+            recent = self._demand_history[-30:]
         mean = np.mean(recent)
         std = np.std(recent)
 
@@ -195,7 +200,7 @@ class DataAgent:
             return clipped
         return value
 
-    def collect(self, day: int, current_date, stress_event, current_stock: float) -> DataDTO:
+    def collect(self, day: int, current_date: datetime, stress_event: StressEvent, current_stock: float, product_name: str = "반도체 칩") -> DataDTO:
         """
         데이터 수집 및 전처리 파이프라인 메인 (Analysis Agent로 표준 DTO 전달)
         """
@@ -203,20 +208,51 @@ class DataAgent:
         idx = (day - 1) % len(self._db)
         raw = self._db[idx]
 
-        # 1. 원시 데이터 추출 (Demand 추출로 검열 방지)
-        raw_demand = raw.get("daily_demand", raw.get("daily_sales")) 
+        # 1. 원시 데이터 추출 (Demand 추출로 검열 방지 및 다중 SKU 지원)
+        if product_name == "마스크":
+            raw_demand = float(np.random.poisson(150.0))
+        elif product_name == "종합 품목":
+            raw_demand = float(max(0.0, np.random.normal(85.0, 20.0)))
+        else:
+            raw_demand = raw.get("daily_demand", raw.get("daily_sales"))
+            if raw_demand is None:
+                raw_demand = 120.0
 
         # 2. 결측치 및 통계적 노이즈 보정
         clean_demand = self._clip_outlier(self._fix_missing(raw_demand, "daily_demand"), "daily_demand")
 
-        # 3. 외부 신호 수집
+        # 3. 외부 신호 수집 및 공급망 리드타임 Matrix 적용
         signals = self._fetch_external_signals(day)
-        base_lead_time = signals["lead_time_days"]
+            
+        db_lead_time = None
+        try:
+            from db import get_db_connection
+            logistics_mode = stress_event.get("logistics_mode", "ROAD") if isinstance(stress_event, dict) else "ROAD"
+            supplier_code = stress_event.get("supplier_code", "SUPPLIER_001") if isinstance(stress_event, dict) else "SUPPLIER_001"
+            
+            with closing(get_db_connection()) as conn:
+                with closing(conn.cursor()) as cursor:
+                    cursor.execute(
+                        "SELECT lead_time_days FROM lead_time_matrix WHERE product_name = ? AND supplier_code = ? AND logistics_mode = ?",
+                        (product_name, supplier_code, logistics_mode)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        db_lead_time = float(row[0])
+        except Exception as e:
+            logger.error(f"Error querying lead_time_matrix: {e}")
+            
+        if db_lead_time is not None:
+            base_lead_time = db_lead_time
+            logger.info(f"🚚 [LeadTimeMatrix] 리드타임 Matrix 적용 성공: {product_name} ({supplier_code}-{logistics_mode}) ➔ {base_lead_time}일")
+        else:
+            base_lead_time = signals["lead_time_days"]
 
         # 4. 최종 확정된 전처리 데이터를 히스토리에 누적 (과거 창 생성 - 중복 방지 가드레일 적용)
         if day > getattr(self, "last_processed_day", -1):
-            self._demand_history.append(float(clean_demand))
-            self._lt_history.append(float(base_lead_time))
+            with self._history_lock:
+                self._demand_history.append(float(clean_demand))
+                self._lt_history.append(float(base_lead_time))
             self.last_processed_day = day
 
         # 5. 스트레스 테스트 시나리오 가중치 연산
@@ -252,9 +288,33 @@ class DataAgent:
             logger.error(f"❌ 표준 DemandDTO 전처리 변환 실패: {e}")
 
         # 8. 비용 파라미터 동적 파싱 (TC 목적함수용, SKU별 상이)
-        holding_cost_per_unit = float(raw.get("holding_cost_per_unit", 0.5))
-        stockout_cost_per_unit = float(raw.get("stockout_cost_per_unit", 10.0))
-        order_fixed_cost = float(raw.get("order_fixed_cost", 200.0))
+        holding_cost_per_unit = SCM_DEFAULTS["HOLDING_COST_PER_UNIT_PER_DAY"]
+        stockout_cost_per_unit = SCM_DEFAULTS["STOCKOUT_PENALTY_PER_UNIT"]
+        order_fixed_cost = SCM_DEFAULTS["ORDER_FIXED_COST_PER_ORDER"]
+        
+        try:
+            from db import get_db_connection
+            with closing(get_db_connection()) as conn:
+                with closing(conn.cursor()) as cursor:
+                    cursor.execute(
+                        "SELECT unit_price, holding_cost_per_day FROM product_financial_master WHERE product_name = ?",
+                        (product_name,)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        try:
+                            price = float(row["unit_price"])
+                            holding_cost_per_unit = float(row["holding_cost_per_day"])
+                        except (TypeError, KeyError, IndexError):
+                            price = float(row[0])
+                            holding_cost_per_unit = float(row[1])
+                        stockout_cost_per_unit = max(1.0, price * 0.15)
+        except Exception as e:
+            logger.error(f"Error querying product costs: {e}")
+
+        with self._history_lock:
+            history_demand_copy = list(self._demand_history)
+            history_lt_copy = list(self._lt_history)
 
         # 9. 표준 DataDTO 객체를 생성하여 AnalysisAgent로 전달 (하위 호환성 유지)
         return DataDTO(
@@ -265,8 +325,8 @@ class DataAgent:
             lead_time_days=float(final_lead_time),
             weather_index=float(signals["weather_index"]),
             macro_trend=float(signals["macro_trend"]),
-            history_demand=list(self._demand_history),
-            history_lead_time=list(self._lt_history),
+            history_demand=history_demand_copy,
+            history_lead_time=history_lt_copy,
             gdelt_risk_level=gdelt_data["risk_level"],
             gdelt_average_tone=gdelt_data["average_tone"],
             gdelt_article_count=gdelt_data["article_count"],
@@ -292,11 +352,14 @@ class DataAgent:
         보완책 1, 2, 3이 내재된 확률론적 재고/수요 최적화 파라미터가 자동으로 계산되는 마스터 DTO입니다.
         """
         # 1. 수요 평균 및 표준편차 산출 (안정적인 통계 산출을 위해 최소 2일 이상의 데이터가 있을 때 계산)
-        avg_demand = float(np.mean(self._demand_history)) if self._demand_history else clean_demand
-        std_demand = float(np.std(self._demand_history)) if len(self._demand_history) > 1 else (clean_demand * 0.25)
+        with self._history_lock:
+            history_demand_copy = list(self._demand_history)
+            history_lt_copy = list(self._lt_history)
+        avg_demand = float(np.mean(history_demand_copy)) if history_demand_copy else clean_demand
+        std_demand = float(np.std(history_demand_copy)) if len(history_demand_copy) > 1 else (clean_demand * 0.25)
         
         # 2. 리드타임 표준편차 산출
-        std_lt = float(np.std(self._lt_history)) if len(self._lt_history) > 1 else 1.5
+        std_lt = float(np.std(history_lt_copy)) if len(history_lt_copy) > 1 else 1.5
         
         # 3. 비용 정보 파싱
         holding_cost_per_unit = float(raw_record.get("holding_cost_per_unit", 2.0))
@@ -334,7 +397,7 @@ class DataAgent:
             source_file=DATA_PATH
         )
 
-    def collect_demand_dto(self, day: int, current_date, stress_event, current_stock: float) -> DemandDTO:
+    def collect_demand_dto(self, day: int, current_date: datetime, stress_event: StressEvent, current_stock: float) -> DemandDTO:
         """
         날것의 수집 및 보정 데이터를 바탕으로 전처리하여 표준 DemandDTO를 직접 반환하는 엔트리포인트
         """
@@ -444,7 +507,7 @@ class DataAgent:
             quantity = float(qty_match.group(1)) if qty_match else 100.0
             
             # 품목명 유추
-            item_name = "가상 SCM 반度體 부품"
+            item_name = "가상 SCM 반도체 부품"
             category = RiskCategory.LOGISTICS_AND_TRADE
             
             if "반도체" in text or "칩" in text or "반도체" in cleaned:

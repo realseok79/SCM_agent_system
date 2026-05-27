@@ -3,7 +3,19 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, TypedDict
+from agents.config import SCM_DEFAULTS
+
+
+class StressEvent(TypedDict, total=False):
+    is_stress: bool
+    demand_multiplier: float
+    lead_time_multiplier: float
+    logistics_mode: str
+    supplier_code: str
+    description: str
+    start_day: int
+    end_day: int
 
 
 # ──────────────────────────────────────────────────────────
@@ -271,9 +283,9 @@ class DataDTO:
 
     # ── [확장] TC 목적함수 최소화용 비용 파라미터 (SKU별 동적 주입) ──
     # Analysis Agent가 하드코딩 없이 품목별 상이한 비용 구조를 반영할 수 있도록 확장
-    unit_holding_cost: float = 0.5      # 단위 재고 보유 비용 (h, holding cost per unit per day)
-    stockout_penalty: float = 10.0      # 단위 품절 패널티 비용 (p, penalty per unit)
-    order_fixed_cost: float = 200.0     # 1회 발주 고정 비용 (K, ordering cost)
+    unit_holding_cost: float = SCM_DEFAULTS["HOLDING_COST_PER_UNIT_PER_DAY"]      # 단위 재고 보유 비용 (h, holding cost per unit per day)
+    stockout_penalty: float = SCM_DEFAULTS["STOCKOUT_PENALTY_PER_UNIT"]           # 단위 품절 패널티 비용 (p, penalty per unit)
+    order_fixed_cost: float = SCM_DEFAULTS["ORDER_FIXED_COST_PER_ORDER"]          # 1회 발주 고정 비용 (K, ordering cost)
 
 
 @dataclass
@@ -289,6 +301,8 @@ class InventorySignalDTO:
     optimal_order_qty: float   # 경제적 발주량(EOQ) 기반 최적 제안 발주 수량
     confidence_level: float    # 통계적 신뢰 수준 (예: 0.95 -> 95%)
     alert_level: AlertLevel    # 엄격한 데이터 타입을 적용한 위기 경보 시그널
+    current_stock: Optional[float] = None
+    product_name: str = "반도체 칩"
 
 
 import numpy as np

@@ -90,4 +90,19 @@ public class DashboardController {
     public ResponseEntity<RegionalInsight> getLatestInsight(@PathVariable("code") String regionCode) {
         return ResponseEntity.ok(dashboardService.getLatestInsight(regionCode));
     }
+
+    @GetMapping("/batch-risks")
+    public ResponseEntity<Map<String, Map<String, Object>>> getBatchRisks() {
+        return ResponseEntity.ok(dashboardService.getBatchRisks());
+    }
+
+    @GetMapping("/batch-inventories")
+    public ResponseEntity<Map<String, Double>> getBatchInventories() {
+        return ResponseEntity.ok(dashboardService.getRegionalInventorySums());
+    }
+
+    @GetMapping("/mlops-metrics")
+    public ResponseEntity<Map<String, Object>> getMlOpsMetrics() {
+        return ResponseEntity.ok(dashboardService.getMlOpsMetrics());
+    }
 }
